@@ -16,7 +16,13 @@ const sessionRestore = {
       return
     }
 
-    var stateString = JSON.stringify(tasks.getStringifyableState())
+    var rawState = tasks.getStringifyableState()
+    var stateString = JSON.stringify(rawState)
+
+    if (forceSave !== true && stateString === sessionRestore.previousState) {
+      return
+    }
+
     var data = {
       version: 2,
       state: JSON.parse(stateString),
@@ -40,19 +46,17 @@ const sessionRestore = {
       }
     }
 
-    if (forceSave === true || stateString !== sessionRestore.previousState) {
-      if (sync === true) {
-        writeFileAtomic.sync(sessionRestore.savePath, JSON.stringify(data), {})
-      } else {
-        writeFileAtomic(sessionRestore.savePath, JSON.stringify(data), {}, function (err) {
-          if (err) {
-            console.warn(err)
-            statistics.incrementValue('sessionRestoreSaveAsyncWriteErrors')
-          }
-        })
-      }
-      sessionRestore.previousState = stateString
+    if (sync === true) {
+      writeFileAtomic.sync(sessionRestore.savePath, JSON.stringify(data), {})
+    } else {
+      writeFileAtomic(sessionRestore.savePath, JSON.stringify(data), {}, function (err) {
+        if (err) {
+          console.warn(err)
+          statistics.incrementValue('sessionRestoreSaveAsyncWriteErrors')
+        }
+      })
     }
+    sessionRestore.previousState = stateString
   },
   restoreFromFile: function () {
     var savedStringData

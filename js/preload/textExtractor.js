@@ -6,6 +6,9 @@ function isVisible (el) {
 }
 
 function extractPageText (doc, win) {
+  if (!doc || !doc.body) {
+    return ''
+  }
   var maybeNodes = [].slice.call(doc.body.childNodes)
   var textNodes = []
 

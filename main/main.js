@@ -1,6 +1,7 @@
 const electron = require('electron')
 const fs = require('fs')
 const path = require('path')
+const { execFile } = require('child_process')
 
 const {
   app, // Module to control application life.
@@ -16,7 +17,9 @@ const {
   nativeTheme,
   shell,
   net,
-  WebContentsView
+  WebContentsView,
+  screen,
+  powerMonitor
 } = electron
 
 crashReporter.start({
@@ -39,16 +42,22 @@ function clamp (n, min, max) {
   return Math.max(Math.min(n, max), min)
 }
 
+const isDevApp = app.getName().toLowerCase().includes('dev') || !app.isPackaged
+
 if (process.platform === 'win32') {
   (async function () {
     var squirrelCommand = process.argv[1]
     if (squirrelCommand === '--squirrel-install' || squirrelCommand === '--squirrel-updated') {
       isInstallerRunning = true
-      await registryInstaller.install()
+      if (!isDevApp) {
+        await registryInstaller.install()
+      }
     }
     if (squirrelCommand === '--squirrel-uninstall') {
       isInstallerRunning = true
-      await registryInstaller.uninstall()
+      if (!isDevApp) {
+        await registryInstaller.uninstall()
+      }
     }
     if (require('electron-squirrel-startup')) {
       app.quit()
@@ -57,15 +66,22 @@ if (process.platform === 'win32') {
 }
 
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.squirrel.min.min')
+  app.setAppUserModelId(isDevApp ? 'com.squirrel.min_dev.Min-Dev' : 'com.squirrel.min.min')
 }
 
-if (isDevelopmentMode) {
+if (isDevelopmentMode || (isDevApp && !app.getPath('userData').toLowerCase().includes('dev'))) {
   app.setPath('userData', app.getPath('userData') + '-development')
 }
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
+
+/* Performance and resource optimizations for low-overhead background/gaming workloads */
+// Optimize V8 memory heap size and compact bytecode for reduced memory footprint
+app.commandLine.appendSwitch('js-flags', '--optimize-for-size')
+
+// Cap concurrent active WebGL contexts to prevent GPU VRAM hoarding
+app.commandLine.appendSwitch('max-active-webgl-contexts', '4')
 
 var userDataPath = app.getPath('userData')
 
@@ -158,6 +174,63 @@ function handleCommandLineArguments (argv) {
   }
 }
 
+function hasActiveDownloads () {
+  try {
+    return typeof currrentDownloadItems !== 'undefined' && Object.keys(currrentDownloadItems).length > 0
+  } catch (e) {
+    return false
+  }
+}
+
+function isTabActiveWithMedia (wc) {
+  try {
+    if (!wc || wc.isDestroyed()) {
+      return false
+    }
+    // 1. Output sound (voice call, video with audio, music)
+    if (wc.isCurrentlyAudible && wc.isCurrentlyAudible()) {
+      return true
+    }
+    // 2. Active media playback (even if volume is muted, like silent video/stream)
+    if (wc._isMediaPlaying) {
+      return true
+    }
+    // 3. Screen sharing / tab capture
+    if (wc.isCapturing && wc.isCapturing()) {
+      return true
+    }
+  } catch (e) {}
+  return false
+}
+
+function getProtectedPids () {
+  const pids = []
+  webContents.getAllWebContents().forEach(function (wc) {
+    if (isTabActiveWithMedia(wc)) {
+      const pid = wc.getOSProcessId ? wc.getOSProcessId() : null
+      if (pid && !pids.includes(pid)) {
+        pids.push(pid)
+      }
+    }
+  })
+  return pids
+}
+
+function trimMemoryNow () {
+  if (process.platform === 'win32') {
+    const trimmerPath = path.join(__dirname, 'ext/windows/trimMemory.exe')
+    const targetProcName = isDevApp ? 'Min-Dev' : 'min'
+    if (fs.existsSync(trimmerPath)) {
+      const protectedPids = getProtectedPids()
+      const args = [targetProcName]
+      if (protectedPids.length > 0) {
+        args.push('--exclude', protectedPids.join(','))
+      }
+      execFile(trimmerPath, args, { windowsHide: true }, function () {})
+    }
+  }
+}
+
 function createWindow (customArgs = {}) {
   var bounds;
 
@@ -208,6 +281,7 @@ function createWindowWithBounds (bounds, customArgs) {
       : path.join(__dirname, 'icons', 'icon256.png'),
     frame: settings.get('useSeparateTitlebar'),
     alwaysOnTop: settings.get('windowAlwaysOnTop'),
+    title: app.getName(),
     backgroundColor: '#fff', // the value of this is ignored, but setting it seems to work around https://github.com/electron/electron/issues/10559
   })
 
@@ -255,19 +329,28 @@ function createWindowWithBounds (bounds, customArgs) {
     mainView.setBounds({x: 0, y: 0, width: winBounds.width, height: winBounds.height})
   })
 
-  mainView.webContents.ipc.on('set-window-title', function(e, title) {
+  newWin.title = app.getName()
+  newWin.setTitle(app.getName())
+
+  mainView.webContents.ipc.on('set-window-title', function (e, title) {
     newWin.title = title
+    newWin.setTitle(title)
   })
 
   newWin.on('resize', function () {
     // The result of getContentBounds doesn't update until the next tick
     setTimeout(function () {
+      if (!newWin || newWin.isDestroyed()) {
+        return
+      }
       const winBounds = newWin.getContentBounds()
       mainView.setBounds({x: 0, y: 0, width: winBounds.width, height: winBounds.height})
     }, 0)
   })
 
   newWin.on('close', function () {
+    stopBackgroundTrimming()
+    clearTimeout(blurTrimTimeout)
     // save the window size for the next launch of the app
     saveWindowBounds()
   })
@@ -278,13 +361,88 @@ function createWindowWithBounds (bounds, customArgs) {
     }
   })
 
+  let backgroundTrimInterval = null
+  let blurTrimTimeout = null
+
+  function isWindowVisiblyDisplayingOnScreen () {
+    try {
+      if (!newWin || newWin.isDestroyed()) {
+        return false
+      }
+      if (newWin.isMinimized() || !newWin.isVisible()) {
+        return false
+      }
+      const displays = screen ? screen.getAllDisplays() : []
+      if (displays.length > 1) {
+        return true
+      }
+    } catch (e) {}
+    return false
+  }
+
+  function trimMemoryIfInactive () {
+    // 1. Never trim if active downloads or file transfers are in progress
+    if (hasActiveDownloads()) {
+      return
+    }
+    // 2. Never trim if the window is currently focused
+    if (BaseWindow.getFocusedWindow() === newWin) {
+      return
+    }
+    // 3. Never trim if visible on a secondary monitor in a multi-display setup
+    if (isWindowVisiblyDisplayingOnScreen()) {
+      return
+    }
+    trimMemoryNow()
+  }
+
+  function startBackgroundTrimming () {
+    if (backgroundTrimInterval) {
+      return
+    }
+    backgroundTrimInterval = setInterval(function () {
+      const isMinimized = windows.getState(newWin) && windows.getState(newWin).isMinimized
+      const isUnfocused = BaseWindow.getFocusedWindow() !== newWin
+      if (isMinimized || isUnfocused) {
+        trimMemoryIfInactive()
+      } else {
+        stopBackgroundTrimming()
+      }
+    }, 90000)
+  }
+
+  function stopBackgroundTrimming () {
+    if (backgroundTrimInterval) {
+      clearInterval(backgroundTrimInterval)
+      backgroundTrimInterval = null
+    }
+  }
+
+  if (powerMonitor) {
+    powerMonitor.on('suspend', function () {
+      stopBackgroundTrimming()
+      clearTimeout(blurTrimTimeout)
+    })
+    powerMonitor.on('resume', function () {
+      if (BaseWindow.getFocusedWindow() !== newWin) {
+        startBackgroundTrimming()
+      }
+    })
+  }
+
   newWin.on('minimize', function () {
     sendIPCToWindow(newWin, 'minimize')
     windows.getState(newWin).isMinimized = true
+
+    trimMemoryIfInactive()
+    startBackgroundTrimming()
   })
 
   newWin.on('restore', function () {
     windows.getState(newWin).isMinimized = false
+    if (BaseWindow.getFocusedWindow() === newWin) {
+      stopBackgroundTrimming()
+    }
   })
 
   newWin.on('maximize', function () {
@@ -296,6 +454,8 @@ function createWindowWithBounds (bounds, customArgs) {
   })
   
   newWin.on('focus', function () {
+    clearTimeout(blurTrimTimeout)
+    stopBackgroundTrimming()
     sendIPCToWindow(newWin, 'focus')
   })
 
@@ -303,6 +463,13 @@ function createWindowWithBounds (bounds, customArgs) {
     // if the devtools for this window are focused, this check will be false, and we keep the focused class on the window
     if (BaseWindow.getFocusedWindow() !== newWin) {
       sendIPCToWindow(newWin, 'blur')
+      clearTimeout(blurTrimTimeout)
+      blurTrimTimeout = setTimeout(function () {
+        if (BaseWindow.getFocusedWindow() !== newWin) {
+          trimMemoryIfInactive()
+          startBackgroundTrimming()
+        }
+      }, 4000)
     }
   })
 
@@ -359,6 +526,16 @@ function createWindowWithBounds (bounds, customArgs) {
 
   return newWin
 }
+
+app.on('web-contents-created', function (e, wc) {
+  wc._isMediaPlaying = false
+  wc.on('media-started-playing', function () {
+    wc._isMediaPlaying = true
+  })
+  wc.on('media-paused', function () {
+    wc._isMediaPlaying = false
+  })
+})
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.

@@ -9,7 +9,10 @@ if (settings.get('customUserAgent')) {
   newUserAgent = settings.get('customUserAgent')
   hasCustomUserAgent = true
 } else {
-  newUserAgent = defaultUserAgent.replace(/Min\/\S+\s/, '').replace(/Electron\/\S+\s/, '').replace(process.versions.chrome, process.versions.chrome.split('.').map((v, idx) => (idx === 0) ? v : '0').join('.'))
+  newUserAgent = defaultUserAgent
+    .replace(/\s*Min\S*\/\S+/i, '')
+    .replace(/\s*Electron\/\S+/, '')
+    .replace(process.versions.chrome, process.versions.chrome.split('.').map((v, idx) => (idx === 0) ? v : '0').join('.'))
 }
 app.userAgentFallback = newUserAgent
 
@@ -48,17 +51,29 @@ see https://github.com/minbrowser/min/issues/868
 */
 function enableGoogleUASwitcher (ses) {
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (!hasCustomUserAgent && details.url.includes('accounts.google.com')) {
+    let isGoogleLogin = false
+    try {
       const url = new URL(details.url)
-
       if (url.hostname === 'accounts.google.com') {
-        details.requestHeaders['User-Agent'] = getFirefoxUA()
+        isGoogleLogin = true
       }
-    }
+    } catch (e) {}
 
-    const chromiumVersion = process.versions.chrome.split('.')[0]
-    details.requestHeaders['SEC-CH-UA'] = `"Chromium";v="${chromiumVersion}", " Not A;Brand";v="99"`
-    details.requestHeaders['SEC-CH-UA-MOBILE'] = '?0'
+    if (!hasCustomUserAgent && isGoogleLogin) {
+      details.requestHeaders['User-Agent'] = getFirefoxUA()
+
+      // Firefox does not support or send Client Hints (Sec-CH-UA).
+      // Strip all Sec-CH-UA headers so Google cannot detect the underlying Chromium engine.
+      for (const header in details.requestHeaders) {
+        if (header.toLowerCase().startsWith('sec-ch-ua')) {
+          delete details.requestHeaders[header]
+        }
+      }
+    } else {
+      const chromiumVersion = process.versions.chrome.split('.')[0]
+      details.requestHeaders['SEC-CH-UA'] = `"Chromium";v="${chromiumVersion}", " Not A;Brand";v="99"`
+      details.requestHeaders['SEC-CH-UA-MOBILE'] = '?0'
+    }
 
     callback({ cancel: false, requestHeaders: details.requestHeaders })
   })

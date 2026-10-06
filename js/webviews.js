@@ -29,17 +29,25 @@ function captureCurrentTab (options) {
 
 // called whenever a new page starts loading, or an in-page navigation occurs
 function onPageURLChange (tab, url) {
-  if (url.indexOf('https://') === 0 || url.indexOf('about:') === 0 || url.indexOf('chrome:') === 0 || url.indexOf('file://') === 0 || url.indexOf('min://') === 0) {
-    tabs.update(tab, {
-      secure: true,
-      url: url
-    })
-  } else {
-    tabs.update(tab, {
-      secure: false,
-      url: url
-    })
+  let titleToSet
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.endsWith('youtube.com') && (parsed.pathname === '/' || parsed.pathname === '')) {
+      const currentTab = tabs.get(tab)
+      const countMatch = (currentTab && currentTab.title) ? currentTab.title.match(/^\(\d+\)\s*/) : null
+      titleToSet = (countMatch ? countMatch[0] : '') + 'YouTube'
+    }
+  } catch (e) {}
+
+  const updateData = {
+    secure: (url.indexOf('https://') === 0 || url.indexOf('about:') === 0 || url.indexOf('chrome:') === 0 || url.indexOf('file://') === 0 || url.indexOf('min://') === 0),
+    url: url
   }
+  if (titleToSet) {
+    updateData.title = titleToSet
+  }
+
+  tabs.update(tab, updateData)
 
   webviews.callAsync(tab, 'setVisualZoomLevelLimits', [1, 3])
 }
@@ -419,10 +427,28 @@ webviews.bindEvent('will-redirect', onNavigate)
 webviews.bindEvent('did-navigate', function (tabId, url, httpResponseCode, httpStatusText) {
   onPageURLChange(tabId, url)
 })
+webviews.bindEvent('did-navigate-in-page', function (tabId, url, isMainFrame) {
+  if (isMainFrame) {
+    onPageURLChange(tabId, url)
+  }
+})
 
 webviews.bindEvent('did-finish-load', onPageLoad)
 
 webviews.bindEvent('page-title-updated', function (tabId, title, explicitSet) {
+  const currentTab = tabs.get(tabId)
+  if (currentTab && currentTab.url) {
+    try {
+      const parsed = new URL(currentTab.url)
+      if (parsed.hostname.endsWith('youtube.com') && (parsed.pathname === '/' || parsed.pathname === '')) {
+        if (title !== 'YouTube' && !title.endsWith(') YouTube')) {
+          const countMatch = title.match(/^\(\d+\)\s*/)
+          title = (countMatch ? countMatch[0] : '') + 'YouTube'
+        }
+      }
+    } catch (e) {}
+  }
+
   tabs.update(tabId, {
     title: title
   })
@@ -489,6 +515,12 @@ webviews.bindIPC('downloadFile', function (tabId, args) {
   }
 })
 
+ipc.on('hibernateTab', function (e, tabId) {
+  if (tabId && tabId !== webviews.selectedId && webviews.hasViewForTab(tabId)) {
+    webviews.destroy(tabId)
+  }
+})
+
 ipc.on('view-event', function (e, args) {
   webviews.emitEvent(args.event, args.tabId, args.args)
 })
@@ -511,8 +543,14 @@ ipc.on('view-ipc', function (e, args) {
 })
 
 setInterval(function () {
-  captureCurrentTab()
+  if (document.hasFocus() && !document.hidden) {
+    captureCurrentTab()
+  }
 }, 15000)
+
+window.addEventListener('blur', function () {
+  captureCurrentTab()
+})
 
 ipc.on('captureData', function (e, data) {
   tabs.update(data.id, { previewImage: data.url })
