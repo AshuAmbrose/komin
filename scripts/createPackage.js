@@ -40,7 +40,7 @@ function toPath (platform, arch) {
   }
 }
 
-module.exports = function (platform, extraOptions) {
+const createPackage = function (platform, extraOptions) {
   //https://github.com/electron-userland/electron-builder/issues/6365#issuecomment-1186038034
   const afterPack = async context => {
     const ext = {
@@ -150,6 +150,10 @@ module.exports = function (platform, extraOptions) {
     npmRebuild: false
   }
 
+  if (extraOptions && extraOptions.packageOptions) {
+    Object.assign(options, extraOptions.packageOptions)
+  }
+
   const target = (function () {
     if (platform == 'win32') {
       return Platform.WINDOWS.createTarget(['dir'], extraOptions.arch)
@@ -167,3 +171,6 @@ module.exports = function (platform, extraOptions) {
     return Promise.resolve(toPath(platform, extraOptions.arch))
   })
 }
+
+createPackage.toPath = toPath
+module.exports = createPackage

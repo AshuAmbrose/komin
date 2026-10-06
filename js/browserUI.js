@@ -154,10 +154,11 @@ function setWindowTitle () {
     }
   }
 
+  const appTitle = (window.globalArgs && window.globalArgs['app-name']) || 'Min'
   const title = [
     truncateString(tab.title || '', 100),
     truncateString(task.name || '', 100),
-    'Min'
+    appTitle
   ].filter(str => !!str).join(' | ')
 
   if (document.title !== title) {

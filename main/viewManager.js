@@ -1,5 +1,6 @@
 var viewMap = {} // id: view
 var viewStateMap = {} // id: view state
+var tabLastActivity = {} // id: timestamp
 
 var temporaryPopupViews = {} // id: view
 
@@ -21,6 +22,7 @@ function getDefaultViewWebPreferences () {
       allowPopups: false,
       // partition: partition || 'persist:webcontent',
       enableWebSQL: false,
+      backgroundThrottling: true,
       autoplayPolicy: (settings.get('enableAutoplay') ? 'no-user-gesture-required' : 'user-gesture-required'),
       // match Chrome's default for anti-fingerprinting purposes (Electron defaults to 0)
       minimumFontSize: 6,
@@ -237,6 +239,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
   view.setBounds(JSON.parse(boundsString))
 
   viewMap[id] = view
+  tabLastActivity[id] = Date.now()
 
   return view
 }
@@ -256,6 +259,7 @@ function destroyView (id) {
 
   delete viewMap[id]
   delete viewStateMap[id]
+  delete tabLastActivity[id]
 }
 
 function destroyAllViews () {
@@ -269,7 +273,13 @@ function setView (id, senderContents) {
 
   // changing views can cause flickering, so we only want to call it if the view is actually changing
   // see https://github.com/minbrowser/min/issues/1966
-  if (windows.getState(win).selectedView !== viewMap[id]) {
+  const previousId = windows.getState(win).selectedView
+  if (previousId !== id) {
+    if (previousId) {
+      tabLastActivity[previousId] = Date.now()
+    }
+    tabLastActivity[id] = Date.now()
+
     //remove all prior views
     win.getContentView().children.slice(1).forEach(child => win.getContentView().removeChildView(child))
     if (viewStateMap[id].loadedInitialURL) {
@@ -278,6 +288,10 @@ function setView (id, senderContents) {
       win.getContentView().removeChildView(viewMap[id])
     }
     windows.getState(win).selectedView = id
+
+    if (typeof scheduleInactiveTabTrim === 'function') {
+      scheduleInactiveTabTrim()
+    }
   }
 }
 
@@ -466,3 +480,183 @@ ipc.on('saveViewCapture', function (e, data) {
 })
 
 global.getView = getView
+
+/* In-Use Memory Optimization & Smart Two-Tier Hibernation */
+
+const INACTIVE_TAB_TRIM_DELAY = 30000 // 30s debounce after becoming inactive
+const HIBERNATION_IDLE_TIME = 60 * 60 * 1000 // 60 minutes before disposable tab deep sleep
+let inactiveTabTrimTimeout = null
+let inactiveTabTrimInterval = null
+let hibernationCheckInterval = null
+
+function getInactiveTabPids () {
+  const activeViewIds = new Set()
+  windows.getAll().forEach(function (win) {
+    const selected = windows.getState(win)?.selectedView
+    if (selected) {
+      activeViewIds.add(selected)
+    }
+  })
+
+  const now = Date.now()
+  const inactivePids = []
+
+  for (const tabId in viewMap) {
+    // 1. Foreground active tab is strictly protected
+    if (activeViewIds.has(tabId)) {
+      continue
+    }
+    const view = viewMap[tabId]
+    if (!view || !view.webContents || view.webContents.isDestroyed()) {
+      continue
+    }
+    // 2. Protect tabs playing audio, active media, or capturing screen/voice
+    if (typeof isTabActiveWithMedia === 'function' && isTabActiveWithMedia(view.webContents)) {
+      continue
+    }
+    // 3. Tab must be inactive for at least INACTIVE_TAB_TRIM_DELAY
+    const lastActive = tabLastActivity[tabId] || 0
+    if (now - lastActive < INACTIVE_TAB_TRIM_DELAY) {
+      continue
+    }
+    const pid = view.webContents.getOSProcessId ? view.webContents.getOSProcessId() : null
+    if (pid && !inactivePids.includes(pid)) {
+      inactivePids.push(pid)
+    }
+  }
+
+  return inactivePids
+}
+
+function trimInactiveTabsNow () {
+  if (process.platform !== 'win32') {
+    return
+  }
+  // Pause if file downloads are active
+  if (typeof hasActiveDownloads === 'function' && hasActiveDownloads()) {
+    return
+  }
+  const inactivePids = getInactiveTabPids()
+  if (inactivePids.length === 0) {
+    return
+  }
+
+  const trimmerPath = path.join(__dirname, 'ext/windows/trimMemory.exe')
+  if (fs.existsSync(trimmerPath)) {
+    // Empty working set exclusively for inactive tab renderer processes
+    execFile(trimmerPath, inactivePids.map(String), { windowsHide: true }, function () {})
+  }
+}
+
+function scheduleInactiveTabTrim () {
+  clearTimeout(inactiveTabTrimTimeout)
+  inactiveTabTrimTimeout = setTimeout(trimInactiveTabsNow, INACTIVE_TAB_TRIM_DELAY)
+}
+
+async function isTabImmuneFromHibernation (id, view) {
+  try {
+    if (!view || !view.webContents || view.webContents.isDestroyed()) {
+      return true
+    }
+
+    // 1. Foreground selected tab in any window is immune
+    for (const win of windows.getAll()) {
+      if (windows.getState(win)?.selectedView === id) {
+        return true
+      }
+    }
+
+    // 2. Tab used within threshold is immune
+    const lastActive = tabLastActivity[id] || 0
+    if (Date.now() - lastActive < HIBERNATION_IDLE_TIME) {
+      return true
+    }
+
+    // 3. Audio / video / screen capture is immune
+    if (typeof isTabActiveWithMedia === 'function' && isTabActiveWithMedia(view.webContents)) {
+      return true
+    }
+
+    // 4. In-flight downloads protect all tabs
+    if (typeof hasActiveDownloads === 'function' && hasActiveDownloads()) {
+      return true
+    }
+
+    // 5. Origin with granted notification permission is immune
+    const pageUrl = view.webContents.getURL()
+    if (pageUrl && pageUrl.startsWith('http')) {
+      try {
+        const origin = new URL(pageUrl).hostname
+        if (origin && typeof isPermissionGrantedForOrigin === 'function') {
+          if (isPermissionGrantedForOrigin(origin, 'notifications', {})) {
+            return true
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 6. In-page behavioral checks: unsaved form inputs, active WebSockets, beforeunload, playing media
+    const hasActiveWork = await view.webContents.executeJavaScript(`
+      (function() {
+        try {
+          if (window.__minActiveSockets && window.__minActiveSockets > 0) {
+            return true;
+          }
+          const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]), textarea');
+          for (let i = 0; i < inputs.length; i++) {
+            if (inputs[i].value && inputs[i].value.trim().length > 0) {
+              return true;
+            }
+          }
+          if (window.onbeforeunload) {
+            return true;
+          }
+          const media = document.querySelectorAll('audio, video');
+          for (let i = 0; i < media.length; i++) {
+            if (!media[i].paused && !media[i].ended) {
+              return true;
+            }
+          }
+        } catch (e) {}
+        return false;
+      })()
+    `, true).catch(() => false)
+
+    if (hasActiveWork) {
+      return true
+    }
+
+    return false
+  } catch (e) {
+    return true // Safe fallback on error: do not hibernate
+  }
+}
+
+async function checkSmartHibernation () {
+  if (typeof viewMap === 'undefined') {
+    return
+  }
+  if (typeof hasActiveDownloads === 'function' && hasActiveDownloads()) {
+    return
+  }
+
+  for (const id in viewMap) {
+    const view = viewMap[id]
+    const immune = await isTabImmuneFromHibernation(id, view)
+    if (!immune) {
+      windows.getAll().forEach(function (win) {
+        sendIPCToWindow(win, 'hibernateTab', id)
+      })
+    }
+  }
+}
+
+// Start recurring intervals for in-use optimization and smart hibernation
+if (process.platform === 'win32') {
+  if (!inactiveTabTrimInterval) {
+    inactiveTabTrimInterval = setInterval(trimInactiveTabsNow, 60000)
+  }
+  if (!hibernationCheckInterval) {
+    hibernationCheckInterval = setInterval(checkSmartHibernation, 300000)
+  }
+}

@@ -11,6 +11,12 @@ var enabledFilteringOptions = {
 }
 
 const globalParamsToRemove = [
+  // analytics & campaign
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
   // microsoft
   'msclkid',
   // google
@@ -145,14 +151,24 @@ function filterPopups (url) {
 }
 
 function removeTrackingParams (url) {
+  if (!url || !url.includes('?')) {
+    return url
+  }
   try {
     var urlObj = new URL(url)
-    for (const param of urlObj.searchParams) {
-      if (globalParamsToRemove.includes(param[0]) ||
+    const toDelete = []
+    for (const [key] of urlObj.searchParams) {
+      if (globalParamsToRemove.includes(key) ||
         (siteParamsToRemove[urlObj.hostname] &&
-          siteParamsToRemove[urlObj.hostname].includes(param[0]))) {
-        urlObj.searchParams.delete(param[0])
+          siteParamsToRemove[urlObj.hostname].includes(key))) {
+        toDelete.push(key)
       }
+    }
+    if (toDelete.length === 0) {
+      return url
+    }
+    for (const key of toDelete) {
+      urlObj.searchParams.delete(key)
     }
     return urlObj.toString()
   } catch (e) {
@@ -164,10 +180,19 @@ function removeTrackingParams (url) {
 function handleRequest (details, callback) {
   /* eslint-disable standard/no-callback-literal */
 
-  // webContentsId may not exist if this request is a mainFrame or subframe
+  // Fast-path domain extraction via initiator/referrer without synchronous webContents lookup
   let domain
-  if (details.webContentsId) {
-    domain = parser.getUrlHost(webContents.fromId(details.webContentsId).getURL())
+  if (details.initiator) {
+    domain = parser.getUrlHost(details.initiator)
+  } else if (details.referrer) {
+    domain = parser.getUrlHost(details.referrer)
+  } else if (details.webContentsId) {
+    try {
+      const wc = webContents.fromId(details.webContentsId)
+      if (wc && !wc.isDestroyed()) {
+        domain = parser.getUrlHost(wc.getURL())
+      }
+    } catch (e) {}
   }
 
   const isExceptionDomain = domain && requestDomainIsException(domain)
@@ -270,4 +295,12 @@ settings.listen('filtering', function (value) {
   }
 
   setFilteringSettings(value)
+})
+
+ipc.on('is-content-blocking-enabled', function (e, domain) {
+  if (!domain || enabledFilteringOptions.blockingLevel === 0) {
+    e.returnValue = false
+    return
+  }
+  e.returnValue = !requestDomainIsException(domain)
 })
