@@ -329,11 +329,14 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     /*
     Once this view is navigated away or destroyed, clean up any pending requests
     */
-    webContents.on('did-start-navigation', function (e, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-      if (isMainFrame && !isInPlace) {
-        removePermissionsForContents(webContents)
-      }
-    })
+    if (!webContents._hasPermissionCleanupListener) {
+      webContents._hasPermissionCleanupListener = true
+      webContents.on('did-start-navigation', function (e, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
+        if (isMainFrame && !isInPlace) {
+          removePermissionsForContents(webContents)
+        }
+      })
+    }
     webContents.once('destroyed', function () {
       if (windows.getAll().length > 0) {
         removePermissionsForContents(webContents)

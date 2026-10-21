@@ -9,13 +9,17 @@ function extractPageText (doc, win) {
   if (!doc || !doc.body) {
     return ''
   }
-  var maybeNodes = [].slice.call(doc.body.childNodes)
+  var maybeNodes = []
+  var initialChildren = doc.body.childNodes
+  for (var k = initialChildren.length - 1; k >= 0; k--) {
+    maybeNodes.push(initialChildren[k])
+  }
   var textNodes = []
 
   var ignore = 'link, style, script, noscript, .hidden, .visually-hidden, .visuallyhidden, [role=presentation], [hidden], [style*="display:none"], [style*="display: none"], .ad, .dialog, .modal, select, svg, details:not([open]), header, nav, footer'
 
   while (maybeNodes.length) {
-    var node = maybeNodes.shift()
+    var node = maybeNodes.pop()
 
     // if the node should be ignored, skip it and all of it's child nodes
     if (node.matches && node.matches(ignore)) {
@@ -38,8 +42,7 @@ function extractPageText (doc, win) {
     var cnl = childNodes.length
 
     for (var i = cnl - 1; i >= 0; i--) {
-      var childNode = childNodes[i]
-      maybeNodes.unshift(childNode)
+      maybeNodes.push(childNodes[i])
     }
   }
 
@@ -48,13 +51,13 @@ function extractPageText (doc, win) {
   var tnl = textNodes.length
 
   // combine the text of all of the accepted text nodes together
-  for (var i = 0; i < tnl; i++) {
-    text += textNodes[i].textContent + ' '
+  for (var j = 0; j < tnl; j++) {
+    text += textNodes[j].textContent + ' '
   }
 
   // special meta tags
 
-  var mt = doc.head.querySelector('meta[name=description]')
+  var mt = doc.head ? doc.head.querySelector('meta[name=description]') : null
 
   if (mt) {
     text += ' ' + mt.content
@@ -69,7 +72,7 @@ function extractPageText (doc, win) {
 }
 
 function getPageData (cb) {
-  requestAnimationFrame(function () {
+  var runExtraction = function () {
     var text = extractPageText(document, window)
 
     // try to also extract text for same-origin iframes (such as the reader mode frame)
@@ -89,7 +92,13 @@ function getPageData (cb) {
     cb({
       extractedText: text
     })
-  })
+  }
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(runExtraction, { timeout: 2000 })
+  } else {
+    requestAnimationFrame(runExtraction)
+  }
 }
 
 // send the data when the page loads
