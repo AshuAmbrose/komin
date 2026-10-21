@@ -138,6 +138,14 @@ function listenForDownloadHeaders (ses) {
       return
     }
 
+    if (typeof applyFilteringCSPHeaders === 'function') {
+      const cspHeaders = applyFilteringCSPHeaders(details, details.responseHeaders)
+      if (cspHeaders) {
+        callback({ cancel: false, responseHeaders: cspHeaders })
+        return
+      }
+    }
+
     callback({ cancel: false })
   })
 }

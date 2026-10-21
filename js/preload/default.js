@@ -3,6 +3,10 @@
 var electron = require('electron')
 var ipc = electron.ipcRenderer
 
+if (window === window.top && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+  ipc.send('inject-cosmetic-filters', window.location.href)
+}
+
 var propertiesToClone = ['deltaX', 'deltaY', 'metaKey', 'ctrlKey', 'defaultPrevented', 'clientX', 'clientY']
 
 function cloneEvent (e) {
@@ -16,10 +20,17 @@ function cloneEvent (e) {
 
 // workaround for Electron bug
 setTimeout(function () {
-  /* Used for swipe gestures */
+  /* Used for swipe gestures and Ctrl/Cmd+wheel zoom */
+  var lastHorizontalWheelTime = 0
+
   window.addEventListener('wheel', function (e) {
-    ipc.send('wheel-event', cloneEvent(e))
-  })
+    if (e.deltaX !== 0) {
+      lastHorizontalWheelTime = Date.now()
+    }
+    if (e.deltaX !== 0 || e.ctrlKey || e.metaKey || (Date.now() - lastHorizontalWheelTime < 1000)) {
+      ipc.send('wheel-event', cloneEvent(e))
+    }
+  }, { passive: true })
 
   var scrollTimeout = null
 
@@ -28,7 +39,7 @@ setTimeout(function () {
     scrollTimeout = setTimeout(function () {
       ipc.send('scroll-position-change', Math.round(window.scrollY))
     }, 200)
-  })
+  }, { passive: true })
 }, 0)
 
 /* Used for picture in picture item in context menu */

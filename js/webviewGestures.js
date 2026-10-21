@@ -88,7 +88,7 @@ function resetScrollCounters () {
 
 function onSwipeGestureLowVelocity () {
   //we can't detect scroll position in an iframe, so never trigger a back gesture from it
-  if (isInFrame) {
+  if (isInFrame || (leftMouseMove === 0 && rightMouseMove === 0)) {
     return
   }
 
@@ -135,7 +135,7 @@ webviews.bindIPC('wheel-event', function (tabId, e) {
   var platformZoomKey = ((navigator.platform === 'MacIntel') ? e.metaKey : e.ctrlKey)
   var platformSecondaryKey = ((navigator.platform === 'MacIntel') ? e.ctrlKey : false)
 
-  if (beginningScrollLeft === null || beginningScrollRight === null) {
+  if (e.deltaX !== 0 && (beginningScrollLeft === null || beginningScrollRight === null)) {
     webviews.callAsync(tabs.getSelected(), 'executeJavaScript', `
     (function () {
       var left = 0
@@ -160,7 +160,7 @@ webviews.bindIPC('wheel-event', function (tabId, e) {
         console.warn(err)
         return
       }
-      if (beginningScrollLeft === null || beginningScrollRight === null) {
+      if (e.deltaX !== 0 && (beginningScrollLeft === null || beginningScrollRight === null)) {
         beginningScrollLeft = result.left
         beginningScrollRight = result.right
       }

@@ -53,6 +53,8 @@ const siteParamsToRemove = {
   ]
 }
 
+const trackingParamFastRegex = /[?&](?:utm_(?:source|medium|campaign|term|content)|msclkid|[gdy]clid|fbclid|_openstat|icid|igshid|mc_eid|_ref|ref_|p[df]_rd_[rwimspstwg]+|_trkparms)=/i
+
 // for tracking the number of blocked requests
 var unsavedBlockedRequests = 0
 
@@ -82,20 +84,36 @@ var electronABPElementTypeMap = {
 }
 
 var parser = require('./ext/abp-filter-parser-modified/abp-filter-parser.js')
+var { ElectronBlocker, fromElectronDetails } = require('@ghostery/adblocker-electron')
 var parsedFilterData = {}
+var adblockerEngine = null
+var adblockerEnginePromise = null
 
 function initFilterList () {
   // discard old data if the list is being re-initialized
   parsedFilterData = {}
 
-  fs.readFile(path.join(__dirname, 'ext/filterLists/easylist+easyprivacy-noelementhiding.txt'),
-    'utf8', function (err, data) {
-      if (err) {
-        return
-      }
-      parser.parse(data, parsedFilterData)
-    }
-  )
+  if (!adblockerEngine && !adblockerEnginePromise) {
+    const cachePath = path.join(app.getPath('userData'), 'adblocker-engine.bin')
+    adblockerEnginePromise = fs.promises.readFile(cachePath)
+      .then(function (data) {
+        const engine = ElectronBlocker.deserialize(new Uint8Array(data))
+        adblockerEngine = engine
+        return engine
+      })
+      .catch(function () {
+        return ElectronBlocker.fromPrebuiltAdsAndTracking(fetch).then(function (engine) {
+          adblockerEngine = engine
+          fs.promises.writeFile(cachePath, Buffer.from(engine.serialize())).catch(function () {})
+          return engine
+        })
+      })
+      .catch(function (err) {
+        console.warn('Failed to initialize adblocker engine:', err)
+        adblockerEnginePromise = null
+        return null
+      })
+  }
 
   fs.readFile(path.join(__dirname, 'ext/filterLists/minFilters.txt'),
     'utf8', function (err, data) {
@@ -136,6 +154,19 @@ function filterPopups (url) {
 
   const domain = parser.getUrlHost(url)
   if (enabledFilteringOptions.blockingLevel > 0 && !requestDomainIsException(domain)) {
+    if (adblockerEngine) {
+      const req = fromElectronDetails({
+        id: 0,
+        url: url,
+        resourceType: 'mainFrame',
+        referrer: 'https://' + domain
+      })
+      const { match } = adblockerEngine.match(req)
+      if (match) {
+        unsavedBlockedRequests++
+        return false
+      }
+    }
     if (
       enabledFilteringOptions.blockingLevel === 2 ||
       (enabledFilteringOptions.blockingLevel === 1 && requestIsThirdParty(domain, url))
@@ -151,7 +182,7 @@ function filterPopups (url) {
 }
 
 function removeTrackingParams (url) {
-  if (!url || !url.includes('?')) {
+  if (!url || !url.includes('?') || !trackingParamFastRegex.test(url)) {
     return url
   }
   try {
@@ -223,11 +254,37 @@ function handleRequest (details, callback) {
   }
 
   if (enabledFilteringOptions.blockingLevel > 0 && !isExceptionDomain) {
+    if (adblockerEngine) {
+      const request = fromElectronDetails(
+        details.referrer ? details : Object.assign({}, details, { referrer: details.initiator || (domain ? 'https://' + domain : '') })
+      )
+      if (adblockerEngine.config.guessRequestTypeFromUrl === true && request.type === 'other') {
+        request.guessTypeOfRequest()
+      }
+      const { redirect, match } = adblockerEngine.match(request)
+      if (redirect) {
+        unsavedBlockedRequests++
+        callback({
+          cancel: false,
+          requestHeaders: details.requestHeaders,
+          redirectURL: redirect.dataUrl
+        })
+        return
+      }
+      if (match) {
+        unsavedBlockedRequests++
+        callback({
+          cancel: true,
+          requestHeaders: details.requestHeaders
+        })
+        return
+      }
+    }
+
     if (
       (enabledFilteringOptions.blockingLevel === 1 && (!domain || requestIsThirdParty(domain, details.url))) ||
       (enabledFilteringOptions.blockingLevel === 2)
     ) {
-      // by doing this check second, we can skip checking same-origin requests if only third-party blocking is enabled
       var matchesFilters = parser.matches(parsedFilterData, details.url, {
         domain: domain,
         elementType: electronABPElementTypeMap[details.resourceType]
@@ -250,6 +307,34 @@ function handleRequest (details, callback) {
     redirectURL: (modifiedURL !== details.url) ? modifiedURL : undefined
   })
   /* eslint-enable standard/no-callback-literal */
+}
+
+function applyFilteringCSPHeaders (details, responseHeaders) {
+  if (
+    adblockerEngine &&
+    enabledFilteringOptions.blockingLevel > 0 &&
+    (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') &&
+    (details.url.startsWith('http://') || details.url.startsWith('https://'))
+  ) {
+    const domain = parser.getUrlHost(details.url)
+    if (!domain || !requestDomainIsException(domain)) {
+      const rawCSP = adblockerEngine.getCSPDirectives(fromElectronDetails(details))
+      if (rawCSP !== undefined) {
+        const cspHeaderName = 'content-security-policy'
+        const policies = rawCSP.split(';').map(csp => csp.trim())
+        const headers = Object.assign({}, responseHeaders || {})
+        for (const [name, values] of Object.entries(headers)) {
+          if (name.toLowerCase() === cspHeaderName) {
+            policies.push(...values)
+            delete headers[name]
+          }
+        }
+        headers[cspHeaderName] = [policies.join(';')]
+        return headers
+      }
+    }
+  }
+  return null
 }
 
 function setFilteringSettings (settings) {
@@ -303,4 +388,29 @@ ipc.on('is-content-blocking-enabled', function (e, domain) {
     return
   }
   e.returnValue = !requestDomainIsException(domain)
+})
+
+ipc.on('inject-cosmetic-filters', function (event, url) {
+  if (enabledFilteringOptions.blockingLevel === 0 || !url) {
+    return
+  }
+  if (!(url.startsWith('http://') || url.startsWith('https://'))) {
+    return
+  }
+  const domain = parser.getUrlHost(url)
+  if (domain && requestDomainIsException(domain)) {
+    return
+  }
+  if (!event.sender || event.sender.isDestroyed()) {
+    return
+  }
+  if (adblockerEngine) {
+    adblockerEngine.onInjectCosmeticFilters(event, url).catch(function () {})
+  } else if (adblockerEnginePromise) {
+    adblockerEnginePromise.then(function (engine) {
+      if (engine && event.sender && !event.sender.isDestroyed()) {
+        engine.onInjectCosmeticFilters(event, url).catch(function () {})
+      }
+    })
+  }
 })

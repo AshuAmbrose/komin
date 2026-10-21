@@ -16,6 +16,9 @@ if (settings.get('customUserAgent')) {
 }
 app.userAgentFallback = newUserAgent
 
+const chromiumMajorVersion = process.versions.chrome.split('.')[0]
+const defaultSecChUaHeader = `"Chromium";v="${chromiumMajorVersion}", " Not A;Brand";v="99"`
+
 function getFirefoxUA () {
   const rootUAs = {
     mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:FXVERSION.0) Gecko/20100101 Firefox/FXVERSION.0',
@@ -51,13 +54,7 @@ see https://github.com/minbrowser/min/issues/868
 */
 function enableGoogleUASwitcher (ses) {
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    let isGoogleLogin = false
-    try {
-      const url = new URL(details.url)
-      if (url.hostname === 'accounts.google.com') {
-        isGoogleLogin = true
-      }
-    } catch (e) {}
+    const isGoogleLogin = details.url.startsWith('https://accounts.google.com/') || details.url === 'https://accounts.google.com'
 
     if (!hasCustomUserAgent && isGoogleLogin) {
       details.requestHeaders['User-Agent'] = getFirefoxUA()
@@ -70,8 +67,7 @@ function enableGoogleUASwitcher (ses) {
         }
       }
     } else {
-      const chromiumVersion = process.versions.chrome.split('.')[0]
-      details.requestHeaders['SEC-CH-UA'] = `"Chromium";v="${chromiumVersion}", " Not A;Brand";v="99"`
+      details.requestHeaders['SEC-CH-UA'] = defaultSecChUaHeader
       details.requestHeaders['SEC-CH-UA-MOBILE'] = '?0'
     }
 

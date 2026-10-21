@@ -59,6 +59,13 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
     view.webContents.on(event, function (e) {
       var args = Array.prototype.slice.call(arguments).slice(1)
 
+      if ((event === 'did-start-navigation' || event === 'will-redirect') && args[2] === false) {
+        return
+      }
+      if (event === 'did-navigate-in-page' && args[1] === false) {
+        return
+      }
+
       const eventTarget = getWindowFromViewContents(view.webContents) || windows.getCurrent()
 
       if (!eventTarget) {
@@ -357,7 +364,8 @@ ipc.on('destroyAllViews', function () {
 ipc.on('setView', function (e, args) {
   setView(args.id, e.sender)
   setBounds(args.id, args.bounds)
-  if (args.focus && BrowserWindow.fromWebContents(e.sender) && BrowserWindow.fromWebContents(e.sender).isFocused()) {
+  const targetWin = windows.windowFromContents(e.sender)?.win
+  if (args.focus && targetWin && targetWin.isFocused()) {
     const couldFocus = focusView(args.id)
     if (!couldFocus) {
       e.sender.focus()
