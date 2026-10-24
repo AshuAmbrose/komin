@@ -143,6 +143,14 @@ function requestIsThirdParty (baseDomain, requestURL) {
   return !(parser.isSameOriginHost(baseDomain, requestDomain) || parser.isSameOriginHost(requestDomain, baseDomain))
 }
 
+function isYouTubeDomain (domain) {
+  if (!domain) {
+    return false
+  }
+  const d = removeWWW(domain).toLowerCase()
+  return d === 'youtube.com' || d.endsWith('.youtube.com') || d === 'youtu.be' || d === 'youtube-nocookie.com'
+}
+
 function requestDomainIsException (domain) {
   return enabledFilteringOptions.exceptionDomains.includes(removeWWW(domain))
 }
@@ -261,7 +269,7 @@ function handleRequest (details, callback) {
       if (adblockerEngine.config.guessRequestTypeFromUrl === true && request.type === 'other') {
         request.guessTypeOfRequest()
       }
-      const { redirect, match } = adblockerEngine.match(request)
+      const { redirect, match } = isYouTubeDomain(domain) ? { redirect: null, match: false } : adblockerEngine.match(request)
       if (redirect) {
         unsavedBlockedRequests++
         callback({
@@ -317,7 +325,7 @@ function applyFilteringCSPHeaders (details, responseHeaders) {
     (details.url.startsWith('http://') || details.url.startsWith('https://'))
   ) {
     const domain = parser.getUrlHost(details.url)
-    if (!domain || !requestDomainIsException(domain)) {
+    if (!domain || (!requestDomainIsException(domain) && !isYouTubeDomain(domain))) {
       const rawCSP = adblockerEngine.getCSPDirectives(fromElectronDetails(details))
       if (rawCSP !== undefined) {
         const cspHeaderName = 'content-security-policy'
@@ -390,6 +398,36 @@ ipc.on('is-content-blocking-enabled', function (e, domain) {
   e.returnValue = !requestDomainIsException(domain)
 })
 
+function injectCosmeticFiltersForSender (engine, sender, url) {
+  if (!engine || !sender || sender.isDestroyed()) {
+    return
+  }
+  const hostname = parser.getUrlHost(url)
+  const domain = removeWWW(hostname)
+  const { active, styles, scripts } = engine.getCosmeticsFilters({
+    domain: domain,
+    hostname: hostname,
+    url: url,
+    getBaseRules: true,
+    getInjectionRules: true,
+    getExtendedRules: false,
+    getRulesFromHostname: true,
+    getRulesFromDOM: false
+  })
+  if (active === false) {
+    return
+  }
+  if (styles && styles.length > 0) {
+    sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
+  }
+  if (!isYouTubeDomain(domain) && scripts && scripts.length > 0) {
+    const combined = scripts.map(function (s) {
+      return '(() => {\ntry {\n' + s + '\n} catch (e) {}\n})();'
+    }).join('\n')
+    sender.executeJavaScript(combined, true).catch(function () {})
+  }
+}
+
 ipc.on('inject-cosmetic-filters', function (event, url) {
   if (enabledFilteringOptions.blockingLevel === 0 || !url) {
     return
@@ -405,11 +443,11 @@ ipc.on('inject-cosmetic-filters', function (event, url) {
     return
   }
   if (adblockerEngine) {
-    adblockerEngine.onInjectCosmeticFilters(event, url).catch(function () {})
+    injectCosmeticFiltersForSender(adblockerEngine, event.sender, url)
   } else if (adblockerEnginePromise) {
     adblockerEnginePromise.then(function (engine) {
       if (engine && event.sender && !event.sender.isDestroyed()) {
-        engine.onInjectCosmeticFilters(event, url).catch(function () {})
+        injectCosmeticFiltersForSender(engine, event.sender, url)
       }
     })
   }
