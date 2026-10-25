@@ -88,25 +88,95 @@ var { ElectronBlocker, fromElectronDetails } = require('@ghostery/adblocker-elec
 var parsedFilterData = {}
 var adblockerEngine = null
 var adblockerEnginePromise = null
+var adblockerUpdateTimeout = null
+
+// the downloaded engine is cached on disk, and refreshed once it's older than this
+// (uBlock Origin's YouTube fixes change almost daily)
+const ADBLOCKER_ENGINE_MAX_AGE = 2 * 24 * 60 * 60 * 1000
+// how long to wait before trying again after a failed download
+const ADBLOCKER_RETRY_DELAY = 60 * 60 * 1000
+
+// uBlock Origin's default lists, downloaded from their maintainers.
+// Ghostery's built-in presets use a copy of these that has stopped updating and is missing the newer yearly lists.
+// uBlock Origin starts a new filters-<year>.txt every year, which needs to be added here.
+const UBO_LISTS_URL = 'https://ublockorigin.github.io/uAssets/filters/'
+const ADBLOCKER_LISTS = [
+  'https://easylist.to/easylist/easylist.txt',
+  'https://easylist.to/easylist/easyprivacy.txt',
+  'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=1&mimetype=plaintext',
+  UBO_LISTS_URL + 'filters.txt',
+  UBO_LISTS_URL + 'badware.txt',
+  UBO_LISTS_URL + 'privacy.txt',
+  UBO_LISTS_URL + 'quick-fixes.txt',
+  UBO_LISTS_URL + 'resource-abuse.txt',
+  UBO_LISTS_URL + 'unbreak.txt'
+].concat(['2020', '2021', '2022', '2023', '2024', '2025', '2026'].map(function (year) {
+  return UBO_LISTS_URL + 'filters-' + year + '.txt'
+}))
+
+function getAdblockerCachePath () {
+  return path.join(app.getPath('userData'), 'adblocker-engine-v2.bin')
+}
+
+function downloadAdblockerEngine () {
+  return ElectronBlocker.fromLists(fetch, ADBLOCKER_LISTS).then(function (engine) {
+    adblockerEngine = engine
+    fs.promises.writeFile(getAdblockerCachePath(), Buffer.from(engine.serialize())).catch(function () {})
+    scheduleAdblockerUpdate(ADBLOCKER_ENGINE_MAX_AGE)
+    return engine
+  })
+}
+
+function scheduleAdblockerUpdate (delay) {
+  clearTimeout(adblockerUpdateTimeout)
+  adblockerUpdateTimeout = setTimeout(function () {
+    // don't download anything while blocking is turned off, just check again later
+    if (!(enabledFilteringOptions.blockingLevel > 0)) {
+      scheduleAdblockerUpdate(ADBLOCKER_RETRY_DELAY)
+      return
+    }
+    downloadAdblockerEngine().catch(function (err) {
+      console.warn('Failed to update adblocker engine:', err)
+      scheduleAdblockerUpdate(ADBLOCKER_RETRY_DELAY)
+    })
+  }, delay)
+}
+
+function loadCachedAdblockerEngine () {
+  const cachePath = getAdblockerCachePath()
+  return Promise.all([fs.promises.readFile(cachePath), fs.promises.stat(cachePath)]).then(function ([data, stat]) {
+    adblockerEngine = ElectronBlocker.deserialize(new Uint8Array(data))
+    // keep using the cached copy for now, and refresh it in the background once it's stale
+    const age = Date.now() - stat.mtimeMs
+    scheduleAdblockerUpdate(Math.max(60 * 1000, ADBLOCKER_ENGINE_MAX_AGE - age))
+    return adblockerEngine
+  })
+}
+
+function loadBundledAdblockerEngine () {
+  // offline fallback: build the engine from the copy of EasyList that ships with the app
+  return fs.promises.readFile(path.join(__dirname, 'ext/filterLists/easylist+easyprivacy-noelementhiding.txt'), 'utf8').then(function (text) {
+    adblockerEngine = ElectronBlocker.parse(text)
+    return adblockerEngine
+  })
+}
 
 function initFilterList () {
   // discard old data if the list is being re-initialized
   parsedFilterData = {}
 
   if (!adblockerEngine && !adblockerEnginePromise) {
-    const cachePath = path.join(app.getPath('userData'), 'adblocker-engine.bin')
-    adblockerEnginePromise = fs.promises.readFile(cachePath)
-      .then(function (data) {
-        const engine = ElectronBlocker.deserialize(new Uint8Array(data))
-        adblockerEngine = engine
-        return engine
-      })
+    // older versions cached an engine built from Ghostery's outdated list copy
+    fs.promises.unlink(path.join(app.getPath('userData'), 'adblocker-engine.bin')).catch(function () {})
+
+    adblockerEnginePromise = loadCachedAdblockerEngine()
       .catch(function () {
-        return ElectronBlocker.fromPrebuiltAdsAndTracking(fetch).then(function (engine) {
-          adblockerEngine = engine
-          fs.promises.writeFile(cachePath, Buffer.from(engine.serialize())).catch(function () {})
-          return engine
-        })
+        return downloadAdblockerEngine()
+      })
+      .catch(function (err) {
+        console.warn('Failed to download adblocker engine, using the bundled filter list:', err)
+        scheduleAdblockerUpdate(ADBLOCKER_RETRY_DELAY)
+        return loadBundledAdblockerEngine()
       })
       .catch(function (err) {
         console.warn('Failed to initialize adblocker engine:', err)
@@ -141,14 +211,6 @@ function requestIsThirdParty (baseDomain, requestURL) {
   var requestDomain = removeWWW(parser.getUrlHost(requestURL))
 
   return !(parser.isSameOriginHost(baseDomain, requestDomain) || parser.isSameOriginHost(requestDomain, baseDomain))
-}
-
-function isYouTubeDomain (domain) {
-  if (!domain) {
-    return false
-  }
-  const d = removeWWW(domain).toLowerCase()
-  return d === 'youtube.com' || d.endsWith('.youtube.com') || d === 'youtu.be' || d === 'youtube-nocookie.com'
 }
 
 function requestDomainIsException (domain) {
@@ -269,7 +331,7 @@ function handleRequest (details, callback) {
       if (adblockerEngine.config.guessRequestTypeFromUrl === true && request.type === 'other') {
         request.guessTypeOfRequest()
       }
-      const { redirect, match } = isYouTubeDomain(domain) ? { redirect: null, match: false } : adblockerEngine.match(request)
+      const { redirect, match } = adblockerEngine.match(request)
       if (redirect) {
         unsavedBlockedRequests++
         callback({
@@ -325,7 +387,7 @@ function applyFilteringCSPHeaders (details, responseHeaders) {
     (details.url.startsWith('http://') || details.url.startsWith('https://'))
   ) {
     const domain = parser.getUrlHost(details.url)
-    if (!domain || (!requestDomainIsException(domain) && !isYouTubeDomain(domain))) {
+    if (!domain || !requestDomainIsException(domain)) {
       const rawCSP = adblockerEngine.getCSPDirectives(fromElectronDetails(details))
       if (rawCSP !== undefined) {
         const cspHeaderName = 'content-security-policy'
@@ -390,14 +452,6 @@ settings.listen('filtering', function (value) {
   setFilteringSettings(value)
 })
 
-ipc.on('is-content-blocking-enabled', function (e, domain) {
-  if (!domain || enabledFilteringOptions.blockingLevel === 0) {
-    e.returnValue = false
-    return
-  }
-  e.returnValue = !requestDomainIsException(domain)
-})
-
 function injectCosmeticFiltersForSender (engine, sender, url) {
   if (!engine || !sender || sender.isDestroyed()) {
     return
@@ -420,11 +474,16 @@ function injectCosmeticFiltersForSender (engine, sender, url) {
   if (styles && styles.length > 0) {
     sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
   }
-  if (!isYouTubeDomain(domain) && scripts && scripts.length > 0) {
-    const combined = scripts.map(function (s) {
-      return '(() => {\ntry {\n' + s + '\n} catch (e) {}\n})();'
-    }).join('\n')
-    sender.executeJavaScript(combined, true).catch(function () {})
+  if (scripts && scripts.length > 0) {
+    // each scriptlet bundles its own copy of uBO's helper functions, so run each one in its own scope.
+    // Ghostery's onInjectCosmeticFilters runs them as separate top-level scripts instead, where the copies
+    // overwrite each other and break the page (e.g. Function.prototype.toString recursing forever on YouTube).
+    // scriptletGlobals is still shared between them, as it is in uBO, so they can share one snapshot of the
+    // page's native functions instead of wrapping each other's wrappers
+    const combined = '(() => {\nconst minScriptletGlobals = {};\n' + scripts.map(function (s) {
+      return '((scriptletGlobals) => {\ntry {\n' + s + '\n} catch (e) {}\n})(minScriptletGlobals);'
+    }).join('\n') + '\n})();'
+    sender.executeJavaScript(combined).catch(function () {})
   }
 }
 

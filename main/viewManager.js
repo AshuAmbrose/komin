@@ -596,7 +596,7 @@ async function isTabImmuneFromHibernation (id, view) {
       try {
         const origin = new URL(pageUrl).hostname
         if (origin && typeof isPermissionGrantedForOrigin === 'function') {
-          if (isPermissionGrantedForOrigin(origin, 'notifications', {})) {
+          if (isPermissionGrantedForOrigin(origin, 'notifications', {}, view.webContents.session)) {
             return true
           }
         }
@@ -628,7 +628,7 @@ async function isTabImmuneFromHibernation (id, view) {
         } catch (e) {}
         return false;
       })()
-    `, true).catch(() => false)
+    `).catch(() => false)
 
     if (hasActiveWork) {
       return true
