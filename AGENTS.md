@@ -384,20 +384,29 @@ Channels are plain strings. To find both ends of a channel, search for its name.
   - downloads are active;
   - the window is focused;
   - the window is visible on a multi-monitor setup.
-- `getProtectedPids()` excludes media and capture tabs. Process names are `min`, or `Min-Dev` for dev apps.
+- `getProtectedPids()` excludes media and capture tabs. Process names are `min`, or `Min-Dev` for dev apps. When running unpackaged (`npm start`), the processes are named `electron.exe`, so whole-app trimming matches nothing there; only inactive-tab trimming runs.
 - The `powerMonitor` suspend/resume listeners are added per window and removed on `closed`.
 
-**Inactive-tab trimming** (`viewManager.js`). Every 60 s, and 30 s after a tab switch, it trims the PIDs of tabs inactive for 30 s or more, skipping media and capture tabs.
+**Inactive-tab trimming** (`viewManager.js`). Every 60 s, and 30 s after a tab switch, `getInactiveTabPids` trims tabs inactive for 30 s or more.
+
+- It includes their cross-site frame processes (ads, embeds), found with `getFramePids`, which uses `webContents.mainFrame.framesInSubtree` and each frame's `osProcessId`.
+- It never trims a process that also serves a protected tab (selected, media or capture, or used in the last 30 s) or the browser UI. Chromium can share one process between tabs.
 
 **Hibernation** (`checkSmartHibernation`, every 5 min). It sends `hibernateTab`; the UI then destroys the view, and the tab reloads when selected.
 
 - A tab is immune (`isTabImmuneFromHibernation`) if:
   - it's selected in any window;
-  - it was used in the last 60 min;
+  - it was used in the last 15 min (`HIBERNATION_IDLE_TIME`, lowered from 60 min after measuring that 10 background tabs hold about 1.45 GB that hibernation frees);
   - it has media or capture;
   - downloads are active;
   - its origin has notification permission (persistent or session);
-  - an in-page probe finds non-empty inputs, `window.__minActiveSockets > 0` (WebSocket counter from `siteUnbreak.js`), `onbeforeunload`, or playing media.
+  - an in-page probe finds any of these:
+    - unsaved user input: the `data-min-unsaved-input` attribute on `<html>`;
+    - `window.__minActiveSockets > 0` (WebSocket counter from `siteUnbreak.js`);
+    - `onbeforeunload`;
+    - playing media.
+- How unsaved input is detected: `js/preload/default.js` tracks fields the user changed through trusted `input`/`change` events. Changed means text that differs from the field's default value, a checkbox or radio whose checked state differs from its default, or a contenteditable with text. Submitting a form clears its fields. The attribute is recomputed on each change and when the page is hidden.
+- Don't go back to scanning `input.value`. Checkboxes and radios always have a value (`"on"`), and pages pre-fill search boxes, so that check made nearly every site permanently immune (measured: 6 of 8 tabs).
 - The probe runs `executeJavaScript` in idle tabs, which pulls trimmed memory back in.
 
 **Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. Audio, calls and notifications continue.
@@ -419,7 +428,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 
 | File | Role |
 |---|---|
-| `default.js` | `inject-cosmetic-filters`; forwards wheel/swipe (`wheel-event`) and scroll position; context-menu helpers and picture-in-picture; relays `postMessage` from `min://` pages (`showCredentialList`, `showUserscriptDirectory`, `downloadFile`) |
+| `default.js` | `inject-cosmetic-filters`; marks unsaved user input for hibernation (`data-min-unsaved-input`); forwards wheel/swipe (`wheel-event`) and scroll position; context-menu helpers and picture-in-picture; relays `postMessage` from `min://` pages (`showCredentialList`, `showUserscriptDirectory`, `downloadFile`) |
 | `textExtractor.js` | page text (300k character cap) → `pageData`, sent on load and after `pushState`/`replaceState` (it hooks these in the main world) |
 | `readerDetector.js` | `canReader` heuristic |
 | `siteUnbreak.js` | main-world fixes run with `webFrame.executeJavaScript(scriptsToRun.join(';'))`: `window.close`, google.com/accounts/drive/news/calendar/meet, YouTube homepage title, WebSocket counter |
