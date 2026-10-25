@@ -492,10 +492,19 @@ global.getView = getView
 /* In-Use Memory Optimization & Smart Two-Tier Hibernation */
 
 const INACTIVE_TAB_TRIM_DELAY = 30000 // 30s debounce after becoming inactive
-const HIBERNATION_IDLE_TIME = 60 * 60 * 1000 // 60 minutes before disposable tab deep sleep
+const HIBERNATION_IDLE_TIME = 15 * 60 * 1000 // 15 minutes before disposable tab deep sleep
 let inactiveTabTrimTimeout = null
 let inactiveTabTrimInterval = null
 let hibernationCheckInterval = null
+
+// OS process ids of every frame in a page, including cross-site iframes (ads, embeds) that run in their own processes
+function getFramePids (contents) {
+  try {
+    return contents.mainFrame.framesInSubtree.map(frame => frame.osProcessId)
+  } catch (e) {
+    return [contents.getOSProcessId()]
+  }
+}
 
 function getInactiveTabPids () {
   const activeViewIds = new Set()
@@ -507,33 +516,36 @@ function getInactiveTabPids () {
   })
 
   const now = Date.now()
-  const inactivePids = []
+  const inactivePids = new Set()
+  // a process can be shared between tabs, so one that also serves a protected tab (or the browser UI) is never trimmed
+  const protectedPids = new Set()
+
+  windows.getAll().forEach(function (win) {
+    protectedPids.add(getWindowWebContents(win).getOSProcessId())
+  })
 
   for (const tabId in viewMap) {
-    // 1. Foreground active tab is strictly protected
-    if (activeViewIds.has(tabId)) {
-      continue
-    }
     const view = viewMap[tabId]
     if (!view || !view.webContents || view.webContents.isDestroyed()) {
       continue
     }
-    // 2. Protect tabs playing audio, active media, or capturing screen/voice
-    if (typeof isTabActiveWithMedia === 'function' && isTabActiveWithMedia(view.webContents)) {
-      continue
-    }
-    // 3. Tab must be inactive for at least INACTIVE_TAB_TRIM_DELAY
+    const pids = getFramePids(view.webContents)
     const lastActive = tabLastActivity[tabId] || 0
-    if (now - lastActive < INACTIVE_TAB_TRIM_DELAY) {
-      continue
-    }
-    const pid = view.webContents.getOSProcessId ? view.webContents.getOSProcessId() : null
-    if (pid && !inactivePids.includes(pid)) {
-      inactivePids.push(pid)
+    if (
+      // 1. Foreground active tab is strictly protected
+      activeViewIds.has(tabId) ||
+      // 2. Protect tabs playing audio, active media, or capturing screen/voice
+      (typeof isTabActiveWithMedia === 'function' && isTabActiveWithMedia(view.webContents)) ||
+      // 3. Tab must be inactive for at least INACTIVE_TAB_TRIM_DELAY
+      now - lastActive < INACTIVE_TAB_TRIM_DELAY
+    ) {
+      pids.forEach(pid => protectedPids.add(pid))
+    } else {
+      pids.forEach(pid => inactivePids.add(pid))
     }
   }
 
-  return inactivePids
+  return [...inactivePids].filter(pid => pid && !protectedPids.has(pid))
 }
 
 function trimInactiveTabsNow () {
@@ -551,7 +563,7 @@ function trimInactiveTabsNow () {
 
   const trimmerPath = path.join(__dirname, 'ext/windows/trimMemory.exe')
   if (fs.existsSync(trimmerPath)) {
-    // Empty working set exclusively for inactive tab renderer processes
+    // Empty working set exclusively for inactive tabs' renderer processes, including their cross-site frames
     execFile(trimmerPath, inactivePids.map(String), { windowsHide: true }, function () {})
   }
 }
@@ -610,11 +622,9 @@ async function isTabImmuneFromHibernation (id, view) {
           if (window.__minActiveSockets && window.__minActiveSockets > 0) {
             return true;
           }
-          const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]), textarea');
-          for (let i = 0; i < inputs.length; i++) {
-            if (inputs[i].value && inputs[i].value.trim().length > 0) {
-              return true;
-            }
+          // set by js/preload/default.js while a field the user typed in or ticked is unsaved
+          if (document.documentElement.hasAttribute('data-min-unsaved-input')) {
+            return true;
           }
           if (window.onbeforeunload) {
             return true;
