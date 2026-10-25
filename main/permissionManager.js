@@ -152,9 +152,9 @@ function removePermissionsForContents (contents) {
 /*
 Was permission already granted for this origin?
 */
-function isPermissionGrantedForOrigin (requestOrigin, requestPermission, requestDetails, isPersistent = true) {
-  // Check persistent settings if this is a persistent session
-  if (isPersistent) {
+function isPermissionGrantedForOrigin (requestOrigin, requestPermission, requestDetails, ses) {
+  // Check persistent settings if this is a persistent session (or the session is unknown)
+  if (!ses || ses.isPersistent()) {
     var sitePermissions = getPersistentPermissions()
     var originPermissions = sitePermissions[requestOrigin]
     if (originPermissions) {
@@ -183,8 +183,9 @@ function isPermissionGrantedForOrigin (requestOrigin, requestPermission, request
   }
 
   // Also check session-scoped permissions (for ephemeral private tabs or session grants)
+  // these only apply to the session they were granted in, so private tabs and normal tabs don't share them
   for (var i = 0; i < sessionPermissions.length; i++) {
-    if (requestOrigin === sessionPermissions[i].origin) {
+    if (ses && ses === sessionPermissions[i].session && requestOrigin === sessionPermissions[i].origin) {
       if (requestPermission === 'notifications' && sessionPermissions[i].permission === 'notifications') {
         return true
       }
@@ -290,8 +291,6 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
-  const isPersistent = webContents && webContents.session ? webContents.session.isPersistent() : true
-
   // If permission was explicitly blocked by the user, reject immediately
   if (isPermissionBlockedForOrigin(requestOrigin, permission, details)) {
     callback(false)
@@ -307,7 +306,7 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
   Supported permissions: media, notifications, pointerLock
   */
   if (['media', 'notifications', 'pointerLock'].includes(permission)) {
-    if (isPermissionGrantedForOrigin(requestOrigin, permission, details, isPersistent)) {
+    if (isPermissionGrantedForOrigin(requestOrigin, permission, details, webContents && webContents.session)) {
       callback(true)
     } else if (permission === 'notifications' && hasPendingRequestForOrigin(requestOrigin, permission, details)) {
       callback(false)
@@ -374,13 +373,11 @@ function pagePermissionCheckHandler (webContents, permission, requestingOrigin, 
     return false
   }
 
-  const isPersistent = webContents && webContents.session ? webContents.session.isPersistent() : true
-
   if (isPermissionBlockedForOrigin(requestHostname, permission, details || {})) {
     return false
   }
 
-  return isPermissionGrantedForOrigin(requestHostname, permission, details || {}, isPersistent)
+  return isPermissionGrantedForOrigin(requestHostname, permission, details || {}, webContents && webContents.session)
 }
 
 function displayMediaRequestHandler (request, callback) {
@@ -401,7 +398,7 @@ function displayMediaRequestHandler (request, callback) {
 
   // Fallback: If frame couldn't be resolved directly, find active tab in focused window
   if (!tabId) {
-    const focusedWin = windows.getFocused() || windows.getAll()[0]
+    const focusedWin = windows.getCurrent() || windows.getAll()[0]
     if (focusedWin) {
       const winState = windows.getState(focusedWin)
       if (winState && winState.selectedView) {
@@ -505,6 +502,7 @@ ipc.on('permissionGranted', function (e, permissionData) {
       }
 
       sessionPermissions.push({
+        session: perm.contents && !perm.contents.isDestroyed() ? perm.contents.session : null,
         origin: perm.origin,
         permission: perm.permission,
         details: perm.details
@@ -550,7 +548,8 @@ ipc.on('permissionDenied', function (e, permissionData) {
       }
 
       if (shouldBlock && perm.origin) {
-        sessionPermissions = sessionPermissions.filter(p => p.origin !== perm.origin || p.permission !== perm.permission)
+        const permSession = perm.contents && !perm.contents.isDestroyed() ? perm.contents.session : null
+        sessionPermissions = sessionPermissions.filter(p => p.session !== permSession || p.origin !== perm.origin || p.permission !== perm.permission)
       }
 
       pendingPermissions.splice(i, 1)

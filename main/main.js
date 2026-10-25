@@ -73,15 +73,13 @@ if (isDevelopmentMode || (isDevApp && !app.getPath('userData').toLowerCase().inc
   app.setPath('userData', app.getPath('userData') + '-development')
 }
 
-// workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
+// windows that are fully covered by other windows are treated as hidden, so their pages stop rendering.
+// upstream Min disabled this (disable-backgrounding-occluded-windows) to work around a focus flicker
+// (https://github.com/electron/electron/issues/17942), but that kept covered windows drawing at full speed
 
 /* Performance and resource optimizations for low-overhead background/gaming workloads */
 // Optimize V8 memory heap size and compact bytecode for reduced memory footprint
 app.commandLine.appendSwitch('js-flags', '--optimize-for-size')
-
-// Cap concurrent active WebGL contexts to prevent GPU VRAM hoarding
-app.commandLine.appendSwitch('max-active-webgl-contexts', '4')
 
 var userDataPath = app.getPath('userData')
 
@@ -195,8 +193,8 @@ function isTabActiveWithMedia (wc) {
     if (wc._isMediaPlaying) {
       return true
     }
-    // 3. Screen sharing / tab capture
-    if (wc.isCapturing && wc.isCapturing()) {
+    // 3. Microphone, camera or screen capture (reported by the mediaTracker preload)
+    if (typeof activeMediaByContents !== 'undefined' && activeMediaByContents.has(wc)) {
       return true
     }
   } catch (e) {}
@@ -401,6 +399,10 @@ function createWindowWithBounds (bounds, customArgs) {
       return
     }
     backgroundTrimInterval = setInterval(function () {
+      if (newWin.isDestroyed()) {
+        stopBackgroundTrimming()
+        return
+      }
       const isMinimized = windows.getState(newWin) && windows.getState(newWin).isMinimized
       const isUnfocused = BaseWindow.getFocusedWindow() !== newWin
       if (isMinimized || isUnfocused) {
@@ -418,15 +420,24 @@ function createWindowWithBounds (bounds, customArgs) {
     }
   }
 
+  function onSystemSuspend () {
+    stopBackgroundTrimming()
+    clearTimeout(blurTrimTimeout)
+  }
+
+  function onSystemResume () {
+    if (BaseWindow.getFocusedWindow() !== newWin) {
+      startBackgroundTrimming()
+    }
+  }
+
   if (powerMonitor) {
-    powerMonitor.on('suspend', function () {
-      stopBackgroundTrimming()
-      clearTimeout(blurTrimTimeout)
-    })
-    powerMonitor.on('resume', function () {
-      if (BaseWindow.getFocusedWindow() !== newWin) {
-        startBackgroundTrimming()
-      }
+    powerMonitor.on('suspend', onSystemSuspend)
+    powerMonitor.on('resume', onSystemResume)
+    // powerMonitor is app-wide, so these listeners have to be removed once this window is gone
+    newWin.on('closed', function () {
+      powerMonitor.removeListener('suspend', onSystemSuspend)
+      powerMonitor.removeListener('resume', onSystemResume)
     })
   }
 
