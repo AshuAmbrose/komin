@@ -2,7 +2,7 @@
 
 Context for AI coding agents (and humans) working on this repository. Read it fully before changing code: it records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
 
-This file describes the code as of commit `edd15667` on `master`. When the code and this file disagree, the code wins. Fix this file in the same change.
+This file describes the code as of `master` at `4d846aa3` plus the `feat/userscripts-core` branch. When the code and this file disagree, the code wins. Fix this file in the same change.
 
 ---
 
@@ -39,7 +39,8 @@ This file describes the code as of commit `edd15667` on `master`. When the code 
 - **Fork additions over upstream:**
   - a permission manager (prompt bar, site settings, screen-share picker, live capture indicators);
   - low-resource mode (memory trimming, tab hibernation, idle covered windows);
-  - Ghostery ad blocking with fresh uBlock Origin / EasyList lists.
+  - Ghostery ad blocking with fresh uBlock Origin / EasyList lists;
+  - Tampermonkey-compatible userscripts (Greasemonkey functions, install page, updates, a list in Settings).
 
 ## 3. Stack and versions
 
@@ -59,7 +60,8 @@ This file describes the code as of commit `edd15667` on `master`. When the code 
 npm install                 # postinstall runs scripts/setupDevEnv.js (flips an Electron fuse on node_modules/electron)
 npm start                   # npm run build, then concurrently: scripts/watch.js + `electron . --development-mode`
 npm run build               # buildMain + buildBrowser + buildBrowserStyles + buildPreload
-npm test                    # lint only (standard). No unit tests exist.
+npm test                    # lint only (standard)
+npm run test:unit           # unit tests (node:test, test/*.test.js); only the userscript matcher has them so far
 npm run lint                # REWRITES files (prettier --write, standard --fix)
 node scripts/buildWindows.js --arch=x64   # package x64 only (run `npm run build` first)
 npm run buildWindows        # build + package x64, ia32, arm64 (slow)
@@ -131,10 +133,10 @@ Native views are drawn *above* the HTML UI, and HTML can never overlay them. Whe
 | Script | Output | Notes |
 |---|---|---|
 | `scripts/buildLocalization.js` | `dist/localization.build.js` | merges `localization/languages/*.json` (comments stripped) plus `localization/localizationHelpers.js` (defines `l()`). Called by `buildMain`. |
-| `scripts/buildMain.js` | `main.build.js` | concatenates in **this order**: `dist/localization.build.js`, `main/windowManagement.js`, `js/util/keyMap.js`, `main/menu.js`, `main/touchbar.js`, `main/registryConfig.js`, `js/util/settings/settingsMain.js`, `main/main.js`, `main/minInternalProtocol.js`, `main/filtering.js`, `main/viewManager.js`, `main/download.js`, `main/UASwitcher.js`, `main/permissionManager.js`, `main/prompt.js`, `main/remoteMenu.js`, `main/remoteActions.js`, `main/keychainService.js`, `js/util/proxy.js`, `main/themeMain.js` |
+| `scripts/buildMain.js` | `main.build.js` | concatenates in **this order**: `dist/localization.build.js`, `main/windowManagement.js`, `js/util/keyMap.js`, `main/menu.js`, `main/touchbar.js`, `main/registryConfig.js`, `js/util/settings/settingsMain.js`, `main/main.js`, `main/minInternalProtocol.js`, `main/filtering.js`, `main/viewManager.js`, `main/download.js`, `main/UASwitcher.js`, `main/permissionManager.js`, `main/prompt.js`, `main/remoteMenu.js`, `main/remoteActions.js`, `main/keychainService.js`, `js/util/proxy.js`, `main/themeMain.js`, `js/util/userscriptMatching.js`, `main/userscripts.js`, `main/userscriptAPI.js`, `main/userscriptInstall.js` |
 | `scripts/buildBrowser.js` | `dist/build.js` then `dist/bundle.js` | browserify of `dist/localization.build.js` + `js/default.js`, with `paths: [root, js/]` and `node: true`; `chokidar` and `write-file-atomic` excluded |
 | `scripts/buildBrowserStyles.js` | `dist/bundle.css` | concatenates `css/*.css` (fixed list) + dragula css |
-| `scripts/buildPreload.js` | `dist/preload.js` | concatenates `js/preload/default.js`, `textExtractor.js`, `readerDetector.js`, `siteUnbreak.js`, `mediaTracker.js`, `js/util/settings/settingsPreload.js`, `js/preload/passwordFill.js`, `js/preload/translate.js` |
+| `scripts/buildPreload.js` | `dist/preload.js` | concatenates `js/preload/default.js`, `textExtractor.js`, `readerDetector.js`, `siteUnbreak.js`, `mediaTracker.js`, `userscripts.js`, `js/util/settings/settingsPreload.js`, `js/preload/passwordFill.js`, `js/preload/translate.js` |
 
 Consequences of the concatenation:
 
@@ -164,7 +166,7 @@ Consequences of the concatenation:
 | `main.js` | startup, `createWindow`/`createWindowWithBounds`, `sendIPCToWindow`, `getWindowWebContents`, `handleCommandLineArguments`, window events. Also memory trimming of the whole app (`trimMemoryNow`, `trimMemoryIfInactive`, `startBackgroundTrimming`), the media guards `isTabActiveWithMedia` and `getProtectedPids`, `hasActiveDownloads`, the tab-state relay (`tab-state-change`), and the places/translation channel setup. |
 | `viewManager.js` | tab views: globals `viewMap`, `viewStateMap`, `tabLastActivity`. Functions `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `getView`, `getTabIDFromWebContents`, `getWindowFromViewContents`. `callViewMethod` lets the UI call any `webContents` method. It forwards page events (`view-event`) and page IPC (`view-ipc`) to the UI. Also tab memory trimming and memory priority (`getTabProcessGroups`, `trimInactiveTabsNow`, `scheduleInactiveTabTrim`, `restoreTabMemoryPriority`, `lowMemoryPriorityPids`) and hibernation (`isTabImmuneFromHibernation`, `checkSmartHibernation`). |
 | `filtering.js` | network blocking + Ghostery engine + cosmetic filters + scriptlets + tracking-parameter removal (section 10.2) |
-| `download.js` | `will-download` handling (`downloadHandler`, `currrentDownloadItems`; the triple `r` is an upstream typo, keep it). Also `onHeadersReceived` (PDF to viewer, file-view detection, CORS for `min://` UI/reader/PDF pages, ad-block CSP) and `onBeforeRedirect` |
+| `download.js` | `will-download` handling (`downloadHandler`, `currrentDownloadItems`; the triple `r` is an upstream typo, keep it). Also `onHeadersReceived` (PDF to viewer, userscript install page for `.user.js` responses, file-view detection, CORS for `min://` UI/reader/PDF pages, ad-block CSP) and `onBeforeRedirect` |
 | `UASwitcher.js` | strips `Min`/`Electron` from the user agent; `customUserAgent` setting; Firefox UA and no `Sec-CH-UA*` headers for `accounts.google.com` (Google sign-in) |
 | `permissionManager.js` | permission request/check/display-media handlers, prompts, persistence (section 10.3) |
 | `minInternalProtocol.js` | `min://` scheme (privileged: standard, secure, supportFetchAPI). `registerBundleProtocol(ses)` serves only host `app` from the app directory and rejects path traversal |
@@ -173,6 +175,7 @@ Consequences of the concatenation:
 | `keychainService.js` | built-in password store: `<userData>/passwordStore`, encrypted with `safeStorage` |
 | `registryConfig.js` | Windows default-browser registry keys (on Squirrel install, update and uninstall) |
 | `themeMain.js` | `darkMode` setting to `nativeTheme.themeSource`, `darkThemeIsActive` |
+| `userscripts.js`, `userscriptAPI.js`, `userscriptInstall.js` | userscripts (section 10.8): loading, matching each frame, saved values and menu commands; the Greasemonkey functions that need main (`GM_xmlhttpRequest`, `GM_download`, `GM_openInTab`, `GM_setClipboard`, `GM_notification`, resources); installing, `@require`/`@resource` downloads, updates, and the requests from the install page and Settings |
 
 ### `js/` (browser UI renderer)
 
@@ -193,14 +196,14 @@ Consequences of the concatenation:
 | `readerView.js`, `readerDecision.js`, `pdfViewer.js` | reader view and PDF viewer integration |
 | `passwordManager/` | Bitwarden / 1Password (CLI in `<userData>/tools`), built-in keychain, capture bar, viewer |
 | `downloadManager.js` | download bar (state in memory only) |
-| `userscripts.js` | runs `<userData>/userscripts/*.js` matched by `@match` (setting `userscriptsEnabled`); `!run` bang |
+| `userscripts.js` | the UI's list of userscripts (no code), for the `!run` bang and `@run-at context-menu` scripts in the page menu; scripts' `GM_registerMenuCommand` commands for the page menu (`getMenuCommands`); opens and closes tabs for `GM_openInTab`; "show script directory" (section 10.8) |
 | `statistics.js` | anonymous daily usage stats to `https://services.minbrowser.org/stats/v1/collect` unless `collectUsageStats === false` |
-| `util/` | `urlParser.js` (`parse`: adds `https://`, HTTPS upgrade list, search fallback, `min://name` expansion; `isInternalURL`, `getDomain`), `settings/settings.js` (UI settings API), `keyMap.js`, `searchEngine.js`, `database.js` (Dexie `browsingData2`), `theme.js`, `process.js` |
+| `util/` | `urlParser.js` (`parse`: adds `https://`, HTTPS upgrade list, search fallback, `min://name` expansion; `isInternalURL`, `getDomain`), `settings/settings.js` (UI settings API), `keyMap.js`, `searchEngine.js`, `database.js` (Dexie `browsingData2`), `theme.js`, `process.js`, `userscriptMatching.js` (userscript metadata, URL matching, `@connect` and update permission checks; also concatenated into `main.build.js` and unit-tested), `userscriptPages.js` (requests from the install page and the Settings list to main) |
 
 ### Other folders
 
 - `js/preload/` runs in pages (section 10.5).
-- `pages/` holds internal pages served at `min://app/pages/...`: `settings` (includes the fork's site-settings UI), `error`, `newtab`, `pdfViewer`, `translateService`, `sessionRestoreError`, `prompt`, `phishing`.
+- `pages/` holds internal pages served at `min://app/pages/...`: `settings` (includes the fork's site-settings UI and the userscript list), `userscriptInstall` (fork), `error`, `newtab`, `pdfViewer`, `translateService`, `sessionRestoreError`, `prompt`, `phishing`.
 - `reader/` is reader view; it uses Mozilla Readability from `ext/readability-master`.
 - `ext/` holds:
   - `abp-filter-parser-modified` (Min's original filter parser)
@@ -229,6 +232,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 | Permissions (`permissionManager.js`) | `permissionGranted`, `permissionDenied` (from the UI), `media-access-status` (from the preload) |
 | Downloads | `cancelDownload` (`download.js`) |
 | Settings | `settingChanged` (`settingsMain.js`) |
+| Userscripts (`userscripts*.js`) | from the preload: `userscripts-get` (**sync**), `userscripts-set-values`, `userscripts-menu-command-add`/`-remove`, `userscripts-xhr`, `userscripts-xhr-abort`, `userscripts-download`, `userscripts-open-tab` (handle), `userscripts-close-tab`, `userscripts-set-clipboard`, `userscripts-notification`, `userscripts-resource` (**sync**), `userscripts-install-prompt` (`file:` only), `userscripts-page` (handle; the install page and Settings only). From the UI: `userscripts-list`, `userscripts-run`, `userscripts-menu-commands`, `userscripts-menu-command-run` (handle), `userscripts-tab-opened` |
 | Passwords (`keychainService.js`, handle) | `credentialStoreGetCredentials`, `credentialStoreSetPassword`, `credentialStoreSetPasswordBulk`, `credentialStoreDeletePassword` |
 | Menus and prompts | `open-context-menu` (`remoteMenu.js`); `prompt` (sync), `open-prompt`, `show-prompt`, `close-prompt` (`prompt.js`) |
 
@@ -239,12 +243,12 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 | Views | `view-event` (page events, from `viewManager.js`), `view-ipc` (page IPC forwarded), `async-call-result`, `captureData` |
 | App menu commands | `addTab`, `addPrivateTab`, `addTask`, `goBack`, `goForward`, `zoomIn`, `zoomOut`, `zoomReset`, `print`, `findInPage`, `inspectPage`, `showHistory`, `showBookmarks`, `toggleTaskOverlay`, `saveCurrentPage`, `openEditor`, `enterFocusMode`, `exitFocusMode` |
 | Window state | `focus`, `blur`, `windowFocus`, `minimize`, `maximize`, `unmaximize`, `enter-full-screen`, `leave-full-screen`, `enter-html-full-screen`, `leave-html-full-screen`, `before-input-event` |
-| Features | `updatePermissions` (fork), `hibernateTab` (fork), `download-info`, `openPDF`, `set-file-view`, `tab-state-change-receive`, `read-tab-state` |
+| Features | `updatePermissions` (fork), `hibernateTab` (fork), `userscripts-changed`, `userscripts-open-tab`, `userscripts-close-tab` (fork), `download-info`, `openPDF`, `set-file-view`, `tab-state-change-receive`, `read-tab-state` |
 
 ### From the preload (`ipcRenderer.send` in `js/preload/*`)
 
 - **Forwarded to the UI and handled with `webviews.bindIPC(name)`:** `pageData`, `canReader`, `close-window`, `contextMenuData`, `downloadFile`, `getSettingsData`, `setSetting`, `scroll-position-change`, `wheel-event`, `password-autofill`, `password-autofill-check`, `password-form-filled`, `showCredentialList`, `showUserscriptDirectory`.
-- **Handled directly in main:** `inject-cosmetic-filters`, `media-access-status`, `page-translation-session-create` (`ipcRenderer.postMessage` with a `MessagePort`).
+- **Handled directly in main:** `inject-cosmetic-filters`, `media-access-status`, the `userscripts-*` channels (`viewManager.js` doesn't forward these to the UI: they can carry saved values and request bodies), `page-translation-session-create` (`ipcRenderer.postMessage` with a `MessagePort`).
 
 ### From the UI to a page
 
@@ -452,6 +456,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 | `readerDetector.js` | `canReader` heuristic |
 | `siteUnbreak.js` | main-world fixes run with `webFrame.executeJavaScript(scriptsToRun.join(';'))`: `window.close`, google.com/accounts/drive/news/calendar/meet, YouTube homepage title, WebSocket counter |
 | `mediaTracker.js` | capture tracking (see permissions) |
+| `userscripts.js` | asks main for this frame's userscripts at document start and runs them at their `@run-at` time, with their Greasemonkey functions; notices local `.user.js` files; relays the install page's and Settings' requests (section 10.8) |
 | `settingsPreload.js` | `getSettingsData`/`setSetting` bridge for `min://` origins only |
 | `passwordFill.js` | login form detection and autofill |
 | `translate.js` | page translation via a `MessagePort` (`page-translation-session-create`) |
@@ -474,7 +479,7 @@ Rules for preload code:
   - **Startup and tabs:** `startupTabOption`, `newWindowOption`, `openTabsInForeground`, `enableAutoplay`, `restartNow`
   - **Search and input:** `searchEngine`, `customBangs`, `keyMap`, `userSelectedLanguage`
   - **Passwords:** `passwordManager`, `passwordsNeverSaveDomains`, `1passwordDeviceID`
-  - **Features:** `readerData`, `userscriptsEnabled`, `lastBookmarksBackup`, `phishingWhitelist`, `proxy`
+  - **Features:** `readerData`, `userscriptsEnabled`, `userscriptsInPrivateTabs`, `lastBookmarksBackup`, `phishingWhitelist`, `proxy`
   - **PDF viewer:** `pdfDayTheme`, `pdfNightTheme`, `PDFInvertColors`
   - **Updates and statistics:** `updateNotificationsEnabled`, `collectUsageStats`, `usageData`, `clientID`, `installTime`
 - **Autoplay:** `enableAutoplay` is off by default, so a tab loaded without a click (restored, reloaded, opened from a link) won't autoplay.
@@ -492,6 +497,67 @@ Rules for preload code:
 - **Translation:** Bergamot WASM in a hidden window; models download from `services.minbrowser.org`.
 - **Statistics:** daily POST to `services.minbrowser.org` unless `collectUsageStats === false`. The fork hasn't decided whether to keep this.
 
+### 10.8 Userscripts (`main/userscripts.js`, `main/userscriptAPI.js`, `main/userscriptInstall.js`, `js/preload/userscripts.js`, `js/util/userscriptMatching.js`)
+
+Compatible with Tampermonkey/Violentmonkey scripts (Greasy Fork, OpenUserJS, GitHub). Scripts run inside the page, like Violentmonkey's default mode, so `unsafeWindow` is the page's `window`.
+
+**Files.**
+
+- `<userData>/userscripts/*.js`: the scripts, one file each. The file name is the script's id.
+- `<userData>/userscriptData/scripts.json`: per file, `{enabled, sourceURL, installedAt, updatedAt, hash, lastUpdateCheck, pendingUpdate, updateError}` (`getUserscriptRegistry`). Files without an entry are local scripts, enabled.
+- `userscriptData/values/<file>.json`: saved values, `{key: JSON string}`.
+- `userscriptData/cache/<sha256 of URL>` (+ `.type`): downloaded `@require` and `@resource` files.
+
+**Loading.** While `userscriptsEnabled` is on, main reads the folder (sorted by file name; synchronously, so at startup scripts are ready before the first page loads) and watches it with `fs.watch` (reload 300 ms after the last `.js` change). Each load sends `userscripts-changed` (the list, no code) to every window and `userscripts-page-changed` to open Settings/install pages. A script runs only if it's enabled and all its `@require`/`@resource` files are cached; missing ones are downloaded in the background, then the folder is reloaded. A failed download (including a failed `#sha256=` integrity check) isn't retried until restart, and Settings shows the error. `getKnownUserscripts()` reads the folder even while userscripts are off (the install page needs it).
+
+**Metadata** (`// ==UserScript==` block): `@name`/`@name:<locale>`, `@namespace`, `@version`, `@description`/`@description:<locale>`, `@author`, `@icon`, `@homepage`, `@match`, `@include`, `@exclude`, `@exclude-match`, `@run-at`, `@noframes`, `@grant`, `@connect`, `@require`, `@resource`, `@updateURL`, `@downloadURL`, `@antifeature`. Ignored: `@inject-into`, `@sandbox`, `@unwrap` (scripts always run in the page).
+
+**Matching** (`userscriptMatching.js`):
+
+- `@match` / `@exclude-match`: Chrome match patterns. `*` scheme is http and https; `*.example.com` includes example.com; an optional port; the path is matched against path + query. A missing path counts as `/*` (Chrome would reject it). `<all_urls>` and a bare `*` match everything.
+- `@include` / `@exclude`: globs (`*` = anything, case-insensitive, whole URL) or `/regex/flags`. `.tld` stands for a top-level domain (approximate: one optional 2–3 letter label plus the last label).
+- No `@match`/`@include` at all = runs everywhere. Declared but all invalid = runs nowhere.
+- Only `http:`, `https:` and `file:` pages, never `min://`.
+- Legacy files without metadata: `example.com.js` (a leading `www.` is dropped) = `*://*.example.com/*`; `global.js` = everywhere. They get no Greasemonkey functions and run unwrapped, as before.
+
+**Running.** `js/preload/userscripts.js` (every frame) calls `ipc.sendSync('userscripts-get')` at document start. Main matches against `event.senderFrame.url` (not a renderer-supplied URL), drops `@noframes` scripts in subframes and `context-menu` scripts, and replies `[{id, name, runAt, code, params, grants, info, values}]` or `null`. The handler must always set `event.returnValue`, or the page hangs.
+
+- `document-start`: immediately (before the page's first script); `document-body`: when `<body>` exists (MutationObserver); `document-end`: at DOMContentLoaded, before the page's own listeners; `document-idle` (the default): a task after that; `context-menu`: only from the page menu or `!run` (`userscripts-run` → main sends the script to the tab's main frame as `userscripts-run-script`).
+- **How the Greasemonkey functions stay private:** main builds `code` as a function body: a prologue (`unsafeWindow = window`, plus `USERSCRIPT_XHR_PROLOGUE` for scripts with `GM_xmlhttpRequest`), the `@require` files, then the script, all in one scope as in Tampermonkey. The preload compiles it with `new Function(...params, code)` (params: `GM_info`, `GM`, `unsafeWindow`, `GM_<granted>`) and runs it in the page with `contextBridge.executeInMainWorld({func, args})`. The functions live in the preload's isolated world and reach the script only as arguments, so the page never sees them on `window`. Page CSP and Trusted Types block neither step (checked on a strict-CSP page, GitHub and YouTube). About 1 ms per script.
+- Legacy scripts still run with `webFrame.executeJavaScript(code, false)`. `//# sourceURL=userscript:///<file>` names every script in DevTools. One script's error doesn't stop the others.
+- Private tabs: skipped unless `userscriptsInPrivateTabs` is true (checked with `session.isPersistent()`). Manual runs work in any tab.
+- **Security model.** The page can't call the Greasemonkey functions, but a hostile page can still interfere with a script running on it (it shares the page's built-ins). Main only accepts a function call from a frame it sent that script to (`userscriptFrames`, keyed `processId:routingId`; `getUserscriptForRequest`) and only for functions the script `@grant`s. A script without `@grant` gets the functions its code mentions (as in Tampermonkey); `@grant none` gets none. `GM_info`, `GM.info` and `unsafeWindow` are always there.
+
+**Greasemonkey functions** (`GM_x` and `GM.x`; granting either form grants both; `GM.*` return promises):
+
+| Functions | How |
+|---|---|
+| `getValue`, `setValue`, `deleteValue`, `listValues`, `getValues`, `setValues`, `deleteValues`, `addValueChangeListener`, `removeValueChangeListener` | Values arrive with the script, so reads are synchronous; each read returns a fresh copy. Writes go to main (`userscripts-set-values`), are saved a second later (and on quit), and are passed to the script's other frames (`remote: true` for listeners). |
+| `addStyle`, `addElement` | Done in the preload. The page's CSP can block `<style>`, so when the style doesn't apply it falls back to `webFrame.insertCSS`; inline `<script>` from `addElement` runs with `executeJavaScript`. |
+| `xmlhttpRequest` | Sent by main with `net.request` in the tab's session (cookies included unless `anonymous`). Only to the page's own host and `@connect` domains (a domain includes its subdomains; `*` = anything); anything else gets `onerror` with an explanation. Supports method, headers, body (string, ArrayBuffer, typed array, Blob, FormData, URLSearchParams), `responseType` (text, json, arraybuffer, blob, document), `responseXML`, `timeout`, `abort()`, redirects (`finalUrl`), progress events. Responses over 64 MB fail. |
+| `download` | `webContents.downloadURL`; the suggested name is the save dialog's default. Same host rules as `xmlhttpRequest` (data: and blob: always allowed). |
+| `openInTab` | The UI opens the tab (`userscripts-open-tab`), next to the current one, in the background unless `active`. The returned object's `close()` works; `closed`/`onclose` don't update (it's a copy). |
+| `setClipboard`, `notification` | Main's `clipboard` and `Notification` (`onclick`, `ondone`, `timeout`; `image` as a data: or http(s) URL). |
+| `registerMenuCommand`, `unregisterMenuCommand` | Shown under "Userscript commands" in the page's right-click menu. Main keeps them per frame and clears a frame's commands when it loads a new document. |
+| `getResourceText`, `getResourceURL` | A synchronous request for the cached file when first used; the URL is a `blob:` URL (or `data:` with `isBlobUrl` false). |
+| `log` | `console.log` with the script's name. |
+
+Not supported: `GM_cookie`, `GM_webRequest`, `GM_getTab`/`saveTab`/`getTabs`, `window.onurlchange`, `GM_audio`.
+
+**Installing** (`userscriptInstall.js`, `pages/userscriptInstall`):
+
+- A tab that opens a `.user.js` URL shows `min://app/pages/userscriptInstall/index.html?url=…` instead. For http(s), `download.js`'s `onHeadersReceived` calls `promptUserscriptInstall` for 2xx main-frame responses that aren't HTML, before the file is shown, so it never enters the tab's history. The page itself can't do it: `raw.githubusercontent.com` sends `CSP: sandbox`, which turns off the preload. For `file:` (no headers) the preload asks once the file shows, and that history entry is then removed.
+- The install page fetches the script (`session.fromPartition('persist:webcontent').fetch`, with cookies) and shows: name, version, author, source, what it runs on, `@connect` domains, what its grants allow, where its `@require`/`@resource` files come from, `@antifeature`s, warnings (every site, any domain, scripts off, older or same version, edited copy, and for an update what it adds), and the code. Install uses exactly the reviewed text (`pendingUserscriptInstalls`).
+- Installing downloads every `@require`/`@resource`, writes `<name>.user.js` (or replaces the script with the same `@name` + `@namespace`, or the `id` being updated), records the source and a hash, and turns userscripts on if they were off. "Done"/"Cancel" go to the previous history entry (not `goBack()`, which skips pages that navigated away without a click), or close the tab.
+
+**Updates.** Scripts installed from http(s) are checked 10 minutes after userscripts turn on, then every 24 hours (and on "Check for updates" in Settings). `@updateURL` (often a `.meta.js`) is compared by `@version` (`compareUserscriptVersions`), then `@downloadURL` is fetched; `none` turns updates off. An update installs automatically unless it adds sites, `@connect` domains or grants (`getUserscriptPermissionIncrease`), or the installed file was edited (its hash changed); then `pendingUpdate` is set and Settings offers "Review update", which opens the install page with `&id=`.
+
+**Settings list** (`pages/settings`, through `js/util/userscriptPages.js` → preload → `userscripts-page`, accepted only from the Settings and install pages): on/off per script, version, description, sites, source, pending updates, download errors, Edit (Notepad on Windows, `open -t` on macOS: `shell.openPath` would run a `.js` file with Windows Script Host), Remove (to the trash, and its saved values deleted), New script (a template, opened for editing), Check for updates.
+
+**Cost.** The sync request runs in every http/https/file frame even with no scripts; main answers in about 0.1–0.3 ms (about 1 ms for a page with nine matching scripts and their saved values). No background process; update checks are a few HTTP requests a day.
+
+**Measured** (dev build, scripted with CDP): run-at order, iframes and `@noframes`, `@exclude`, strict CSP + Trusted Types, legacy scripts, manual runs, live reload, private tabs, switching off; every function in the table above, including `@connect` refusals and values reaching other tabs; installing from a link and from a local file, automatic and approved updates, edited scripts, disable and remove. Real scripts installed from GitHub through the install page: Return YouTube Dislike (shows the dislike count on YouTube), and Mottie's GitHub Code Show Whitespace, GitHub Toggle Expanders and GitHub Image Preview (their `@require` files from greasyfork.org and greasemonkey.github.io download fine).
+
 ## 11. Profile folder (`app.getPath('userData')`)
 
 | Item | Path / notes |
@@ -499,7 +565,7 @@ Rules for preload code:
 | Installed browser | `%APPDATA%\Min` |
 | `npm start` / dev | `%APPDATA%\Min-development` |
 | Min-Dev package | `%APPDATA%\Min Dev` (its own identity) |
-| Files | `settings.json`, `sessionRestore.json`, `windowBounds.json`, `passwordStore` (safeStorage-encrypted), `adblocker-engine-v2.bin`, optional `customFilters.txt`, `userscripts/`, `tools/` (Bitwarden/1Password CLIs), plus Chromium's own folders (IndexedDB holds history) |
+| Files | `settings.json`, `sessionRestore.json`, `windowBounds.json`, `passwordStore` (safeStorage-encrypted), `adblocker-engine-v2.bin`, optional `customFilters.txt`, `userscripts/`, `userscriptData/` (`scripts.json`, `values/`, `cache/`; section 10.8), `tools/` (Bitwarden/1Password CLIs), plus Chromium's own folders (IndexedDB holds history) |
 
 ## 12. Conventions
 
@@ -511,7 +577,7 @@ Rules for preload code:
 
 ## 13. Verifying changes
 
-There are no automated tests, so verify by running the app.
+Apart from the userscript matcher's unit tests (`npm run test:unit`), there are no automated tests, so verify by running the app.
 
 - **Quick checks:**
   - `node --check <file>`
@@ -543,12 +609,24 @@ There are no automated tests, so verify by running the app.
 8. `getCosmeticsFilters` scriptlets assume a shared `scriptletGlobals`. Without it, wrappers stack (2^n calls).
 9. `executeJavaScript` in idle tabs (the hibernation probe) defeats memory trimming.
 10. Squirrel and the same version number: an installer for the version already installed may not replace it.
+11. Localization files have Windows line endings in the working tree. A line added with Unix line endings makes `decomment` (in `buildLocalization.js`) treat a `//` comment as running to the next Windows line ending, silently dropping every string in between; the build still succeeds. Keep each file's line endings consistent, and check new strings are in `dist/localization.build.js`.
+12. A page's preload can be switched off by the page: `raw.githubusercontent.com` sends `Content-Security-Policy: sandbox`, and the preload never runs there. Don't rely on the preload to notice what a page is; use the main process (as `promptUserscriptInstall` does).
+13. `webContents.loadURL()`'s promise rejects (`ERR_ABORTED`) when it cuts short the page that is still loading. Wait for `did-finish-load` with the expected URL instead.
+14. `navigationHistory.goBack()` and `canGoBack()` skip entries for pages that navigated away without a click (Chromium's history intervention). Use `goToIndex(getActiveIndex() - 1)` to reach the previous entry.
+15. `shell.openPath()` on a `.js` file on Windows runs it with Windows Script Host. Open scripts in an editor explicitly (`editUserscript`).
 
 ## 15. Open work
 
 - Decide on statistics (`js/statistics.js`): turn off by default, or point at a fork-owned endpoint.
 - Bump `package.json` `version` for fork releases.
-- Document-start scriptlet injection, only if YouTube's late-injection limits become a problem.
+- Document-start scriptlet injection, only if YouTube's late-injection limits become a problem. It could share the userscripts' sync request (section 10.8).
+- Userscripts: unsupported functions (`GM_cookie`, `GM_getTab`/`saveTab`/`getTabs`, `window.onurlchange`), and `GM_openInTab`'s `closed`/`onclose`. Add them if real scripts need them.
+- Chrome extension support (planned, not started). Decisions so far:
+  - Aim for any Chrome Web Store extension, installed as in Chrome ("Add to Chrome", permission review, automatic updates). Load unpacked and `.crx` files too.
+  - Upgrade Electron first (45.1 or later). 43.4.1 doesn't deliver MV3 service-worker events. Electron 45 removes `clipboard` from the renderer (used by `js/contextMenu.js`, `js/defaultKeybindings.js`, `js/searchbar/calculatorPlugin.js`, `js/webviewMenu.js`), reports screen capture as `display-capture`, and has no 32-bit Windows build.
+  - Any `session.webRequest` listener turns off extensions' `chrome.webRequest` and `declarativeNetRequest` for that session (still true in Electron 45.1, `HasListener()` in `electron_browser_client.cc`). DNR does work when there is no listener (probe, Electron 43). So a network-filtering extension can only work if Min removes all four hooks from `persist:webcontent`. Warn before installing one that it turns off Min's ad blocker; offer to install it without network access instead. Private tabs keep Min's ad blocker (extensions don't run there).
+  - The hooks' other jobs need replacements in that mode: the Google sign-in user agent and tracking-parameter removal (static DNR rules in a built-in extension), PDF and userscript-install detection (`will-download`, or a navigation listener plus a HEAD request), file-view detection (the preload), and the reader/PDF pages' cross-origin fetches (through the main process).
+  - Zero cost with no extensions installed. Heavy extensions are the user's choice; Min only shows their memory/CPU and warns.
 - The remaining low-footprint items in section 10.4.
 - Ghostery `data:` redirect failures. A possible fix is serving stubs from a privileged custom protocol.
 - `.nvmrc` is stale (15.7.0).
