@@ -186,6 +186,22 @@
         <div class="setting-secondary-label" id="userscripts-show-directory" hidden style="margin-top: -0.5em; margin-bottom: 0.5em">
           <a data-string="settingsUserscriptShowDirectory"></a>
         </div>
+        <div class="setting-secondary-label" id="userscripts-private-tabs-section" hidden>
+          <input type="checkbox" id="checkbox-userscripts-private-tabs" />
+          <label
+            for="checkbox-userscripts-private-tabs"
+            data-string="settingsUserscriptsPrivateTabs"
+          ></label>
+        </div>
+        <div id="userscripts-manager" hidden>
+          <div id="userscripts-actions">
+            <a id="userscripts-new" data-string="settingsUserscriptsNew"></a>
+            <a id="userscripts-check-updates" data-string="settingsUserscriptsCheckUpdates"></a>
+            <span id="userscripts-status" class="light-fade"></span>
+          </div>
+          <div id="userscripts-empty" class="settings-info-subheading" data-string="settingsUserscriptsEmpty" hidden></div>
+          <div id="userscripts-list"></div>
+        </div>
       </div>
 
       <div class="setting-section" id="section-separate-titlebar">
@@ -379,6 +395,7 @@
     <script src="../../js/util/theme.js"></script>
     <script src="../../js/util/passwordManager.js"></script>
     <script src="../../dist/localization.build.js"></script>
+    <script src="../../js/util/userscriptPages.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

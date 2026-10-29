@@ -6,6 +6,8 @@ var siteThemeCheckbox = document.getElementById('checkbox-site-theme')
 var showDividerCheckbox = document.getElementById('checkbox-show-divider')
 var userscriptsCheckbox = document.getElementById('checkbox-userscripts')
 var userscriptsShowDirectorySection = document.getElementById('userscripts-show-directory')
+var userscriptsPrivateTabsSection = document.getElementById('userscripts-private-tabs-section')
+var userscriptsPrivateTabsCheckbox = document.getElementById('checkbox-userscripts-private-tabs')
 var separateTitlebarCheckbox = document.getElementById('checkbox-separate-titlebar')
 var openTabsInForegroundCheckbox = document.getElementById('checkbox-open-tabs-in-foreground')
 var autoPlayCheckbox = document.getElementById('checkbox-enable-autoplay')
@@ -257,16 +259,145 @@ newWindowSettingInput.addEventListener('change', function() {
 
 /* userscripts setting */
 
-settings.get('userscriptsEnabled', function (value) {
-  if (value === true) {
-    userscriptsCheckbox.checked = true
-    userscriptsShowDirectorySection.hidden = false
+var userscriptsManager = document.getElementById('userscripts-manager')
+var userscriptsList = document.getElementById('userscripts-list')
+var userscriptsEmpty = document.getElementById('userscripts-empty')
+var userscriptsStatus = document.getElementById('userscripts-status')
+
+function showUserscriptSettings (enabled) {
+  userscriptsShowDirectorySection.hidden = !enabled
+  userscriptsPrivateTabsSection.hidden = !enabled
+  userscriptsManager.hidden = !enabled
+  if (enabled) {
+    loadUserscriptList()
   }
+}
+
+function createUserscriptLink (text, onClick) {
+  var link = document.createElement('a')
+  link.textContent = text
+  link.addEventListener('click', onClick)
+  return link
+}
+
+function addUserscriptDetail (parent, text, className) {
+  var detail = document.createElement('div')
+  detail.className = 'userscript-detail' + (className ? ' ' + className : '')
+  detail.textContent = text
+  parent.appendChild(detail)
+  return detail
+}
+
+// the scripts in <userData>/userscripts (main/userscriptInstall.js)
+function renderUserscriptList (data) {
+  userscriptsList.textContent = ''
+  userscriptsEmpty.hidden = data.scripts.length > 0
+
+  data.scripts.forEach(function (script, i) {
+    var item = document.createElement('div')
+    item.className = 'userscript-item'
+
+    var checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.id = 'userscript-' + i
+    checkbox.checked = script.enabled
+    checkbox.addEventListener('change', function () {
+      userscriptPages.request('set-enabled', { id: script.id, enabled: checkbox.checked })
+    })
+    item.appendChild(checkbox)
+
+    var info = document.createElement('div')
+    info.className = 'userscript-info'
+    var name = document.createElement('label')
+    name.htmlFor = checkbox.id
+    name.className = 'userscript-name'
+    name.textContent = script.name + (script.version ? ' ' + script.version : '')
+    info.appendChild(name)
+
+    if (script.description) {
+      addUserscriptDetail(info, script.description)
+    }
+
+    var sites = script.runsEverywhere ? [l('userscriptInstallEverywhere')] : script.sites.map(userscriptPages.describeSite)
+    var where = script.legacy ? l('settingsUserscriptsLegacy') : l('settingsUserscriptsRunsOn').replace('%s', sites.slice(0, 3).join(', ') + (sites.length > 3 ? ', …' : ''))
+    var from = script.sourceURL ? l('settingsUserscriptsFrom').replace('%s', userscriptPages.describeHost(script.sourceURL)) : l('settingsUserscriptsLocal')
+    addUserscriptDetail(info, where + ' · ' + from, 'light-fade')
+
+    if (script.pendingUpdate) {
+      var review = addUserscriptDetail(info, '')
+      review.appendChild(createUserscriptLink(l('settingsUserscriptsReviewUpdate').replace('%v', script.pendingUpdate.version), function () {
+        window.location = 'min://app/pages/userscriptInstall/index.html?url=' + encodeURIComponent(script.pendingUpdate.url) + '&id=' + encodeURIComponent(script.id)
+      }))
+    }
+    if (script.downloading) {
+      addUserscriptDetail(info, l('settingsUserscriptsDownloading'), 'light-fade')
+    }
+    if (script.downloadError) {
+      addUserscriptDetail(info, l('settingsUserscriptsDownloadFailed').replace('%s', script.downloadError), 'userscript-error')
+    }
+    if (script.updateError) {
+      addUserscriptDetail(info, l('settingsUserscriptsUpdateFailed').replace('%s', script.updateError), 'light-fade')
+    }
+    item.appendChild(info)
+
+    var actions = document.createElement('div')
+    actions.className = 'userscript-actions'
+    actions.appendChild(createUserscriptLink(l('settingsUserscriptsEdit'), function () {
+      userscriptPages.request('edit', { id: script.id })
+    }))
+    actions.appendChild(createUserscriptLink(l('settingsUserscriptsRemove'), function () {
+      if (confirm(l('settingsUserscriptsRemoveConfirm').replace('%s', script.name))) {
+        userscriptPages.request('remove', { id: script.id })
+      }
+    }))
+    item.appendChild(actions)
+
+    userscriptsList.appendChild(item)
+  })
+}
+
+function loadUserscriptList () {
+  userscriptPages.request('list').then(renderUserscriptList, function (e) {
+    userscriptsStatus.textContent = e.message
+  })
+}
+
+userscriptPages.onChange(function () {
+  if (!userscriptsManager.hidden) {
+    loadUserscriptList()
+  }
+})
+
+document.getElementById('userscripts-new').addEventListener('click', function () {
+  userscriptPages.request('create')
+})
+
+document.getElementById('userscripts-check-updates').addEventListener('click', function () {
+  userscriptsStatus.textContent = l('settingsUserscriptsChecking')
+  userscriptPages.request('check-updates').then(function (data) {
+    userscriptsStatus.textContent = ''
+    renderUserscriptList(data)
+  }, function (e) {
+    userscriptsStatus.textContent = e.message
+  })
+})
+
+settings.get('userscriptsEnabled', function (value) {
+  userscriptsCheckbox.checked = value === true
+  showUserscriptSettings(value === true)
 })
 
 userscriptsCheckbox.addEventListener('change', function (e) {
   settings.set('userscriptsEnabled', this.checked)
-  userscriptsShowDirectorySection.hidden = !this.checked
+  showUserscriptSettings(this.checked)
+})
+
+settings.get('userscriptsInPrivateTabs', function (value) {
+  userscriptsPrivateTabsCheckbox.checked = value === true
+})
+
+userscriptsPrivateTabsCheckbox.addEventListener('change', function (e) {
+  settings.set('userscriptsInPrivateTabs', this.checked)
 })
 
 userscriptsShowDirectorySection.getElementsByTagName('a')[0].addEventListener('click', function() {

@@ -23,7 +23,11 @@ const modules = [
   'main/remoteActions.js',
   'main/keychainService.js',
   'js/util/proxy.js',
-  'main/themeMain.js'
+  'main/themeMain.js',
+  'js/util/userscriptMatching.js',
+  'main/userscripts.js',
+  'main/userscriptAPI.js',
+  'main/userscriptInstall.js'
 ]
 
 function buildMain () {

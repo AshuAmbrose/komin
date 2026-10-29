@@ -12,7 +12,7 @@ const remoteMenu = require('remoteMenuRenderer.js')
 
 const webviewMenu = {
   menuData: null,
-  showMenu: function (data, extraData) { // data comes from a context-menu event
+  showMenu: function (data, extraData, userscriptCommands) { // data comes from a context-menu event; userscriptCommands from userscripts.getMenuCommands
     var currentTab = tabs.get(tabs.getSelected())
 
     var menuSections = []
@@ -283,9 +283,7 @@ const webviewMenu = {
     /* Userscripts */
 
     var contextMenuScripts = userscripts.getMatchingScripts(tabs.get(tabs.getSelected()).url).filter(function (script) {
-      if (script.options['run-at'] && script.options['run-at'].includes('context-menu')) {
-        return true
-      }
+      return script.runAt === 'context-menu'
     })
 
     if (contextMenuScripts.length > 0) {
@@ -304,6 +302,24 @@ const webviewMenu = {
         })
       })
       menuSections.push(scriptActions)
+    }
+
+    if (userscriptCommands && userscriptCommands.length > 0) {
+      var commandActions = [
+        {
+          label: l('userscriptCommands'),
+          enabled: false
+        }
+      ]
+      userscriptCommands.forEach(function (command) {
+        commandActions.push({
+          label: command.caption + ' (' + command.scriptName + ')',
+          click: function () {
+            userscripts.runMenuCommand(currentTab.id, command)
+          }
+        })
+      })
+      menuSections.push(commandActions)
     }
 
     var translateMenu = {
@@ -360,8 +376,11 @@ const webviewMenu = {
       webviews.callAsync(tabs.getSelected(), 'send', ['getContextMenuData', { x: data.x, y: data.y }])
     })
     webviews.bindIPC('contextMenuData', function (tabId, args) {
-      webviewMenu.showMenu(webviewMenu.menuData, args[0])
+      var menuData = webviewMenu.menuData
       webviewMenu.menuData = null
+      userscripts.getMenuCommands(tabId).then(function (commands) {
+        webviewMenu.showMenu(menuData, args[0], commands)
+      })
     })
   }
 }

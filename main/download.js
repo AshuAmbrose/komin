@@ -97,6 +97,13 @@ function listenForDownloadHeaders (ses) {
         return
       }
 
+      // a userscript: show the install page instead (main/userscriptInstall.js)
+      if (details.statusCode >= 200 && details.statusCode < 300 && typeof promptUserscriptInstall === 'function' &&
+        promptUserscriptInstall(details.webContents, details.url, typeHeader instanceof Array ? typeHeader : [])) {
+        callback({ cancel: false })
+        return
+      }
+
       // whether this is a file being viewed in-browser or a page
       // Needed to save files correctly: https://github.com/minbrowser/min/issues/1717
       // It doesn't make much sense to have this here, but only one onHeadersReceived instance can be created per session

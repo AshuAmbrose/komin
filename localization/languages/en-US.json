@@ -63,6 +63,51 @@
     "importBookmarks": "Import bookmarks from HTML file",
     "exportBookmarks": "Export bookmarks",
     "runUserscript": "Run userscript",
+    "userscriptCommands": "Userscript commands",
+    "userscriptInstallHeading": "Install user script",
+    "userscriptUpdateHeading": "Update user script",
+    "userscriptInstallLoading": "Loading the script…",
+    "userscriptInstallLoadError": "Couldn't load this script: %s", //%s is an error message
+    "userscriptInstallBy": "by %s", //%s is the author's name
+    "userscriptInstallFrom": "From %s", //%s is a website address
+    "userscriptInstallRunsOn": "Runs on",
+    "userscriptInstallEverywhere": "Every website",
+    "userscriptInstallExcept": "Except",
+    "userscriptInstallConnects": "Can send requests, signed in as you, to",
+    "userscriptInstallConnectsAnywhere": "Any website",
+    "userscriptInstallConnectsPage": "The website it runs on",
+    "userscriptInstallCan": "Can also",
+    "userscriptInstallDownloads": "Downloads code and files from",
+    "userscriptInstallAntifeatures": "The author says it contains",
+    "userscriptAntifeatureAds": "Ads",
+    "userscriptAntifeatureTracking": "Tracking",
+    "userscriptAntifeatureMiner": "Cryptocurrency mining",
+    "userscriptGrantStorage": "Save its own data",
+    "userscriptGrantRequests": "Send requests to other websites",
+    "userscriptGrantDownload": "Download files",
+    "userscriptGrantTabs": "Open and close tabs",
+    "userscriptGrantClipboard": "Copy to the clipboard",
+    "userscriptGrantNotification": "Show notifications",
+    "userscriptGrantMenu": "Add commands to the page's right-click menu",
+    "userscriptGrantStyle": "Add styles and elements to pages",
+    "userscriptGrantResources": "Use the files it downloads",
+    "userscriptWarningTrust": "Only install scripts you trust. A script can read and change everything on the pages it runs on.",
+    "userscriptWarningEverywhere": "This script runs on every website you visit.",
+    "userscriptWarningConnectAnywhere": "This script can send requests to any website, signed in as you.",
+    "userscriptWarningDisabled": "User scripts are turned off. Installing this script turns them on.",
+    "userscriptWarningEdited": "You've edited the installed copy of this script. Updating replaces your changes.",
+    "userscriptWarningNewPermissions": "This version asks for more than the one you have:",
+    "userscriptWarningOlder": "This is an older version than the one you have (%v).", //%v is a version number
+    "userscriptWarningSameVersion": "This version is already installed.",
+    "userscriptUpdateFrom": "Installed: version %v", //%v is a version number
+    "userscriptShowCode": "Show code",
+    "userscriptInstallButton": "Install",
+    "userscriptUpdateButton": "Update",
+    "userscriptReinstallButton": "Reinstall",
+    "userscriptCancelButton": "Cancel",
+    "userscriptInstalling": "Installing…",
+    "userscriptInstalled": "Installed. It runs the next time you open or reload a page it works on.",
+    "userscriptDoneButton": "Done",
     /* navbar */
     "openMenu": "Open menu", //application menu button on windows
     "enterReaderView": "Enter Reader View",
@@ -170,6 +215,22 @@
       "unsafeHTML": "User scripts allow you to modify the behavior of websites - <a href=\"https://github.com/minbrowser/min/wiki/userscripts\">learn more</a>."
     },
     "settingsUserscriptShowDirectory": "Show script directory",
+    "settingsUserscriptsPrivateTabs": "Also run user scripts in private tabs",
+    "settingsUserscriptsNew": "New script",
+    "settingsUserscriptsCheckUpdates": "Check for updates",
+    "settingsUserscriptsChecking": "Checking for updates…",
+    "settingsUserscriptsEmpty": "No scripts yet. Open a .user.js link (for example on greasyfork.org) to install one, or create a new script.",
+    "settingsUserscriptsEdit": "Edit",
+    "settingsUserscriptsRemove": "Remove",
+    "settingsUserscriptsRemoveConfirm": "Remove \"%s\"? The file is moved to the trash, and the data the script saved is deleted.", //%s is the name of a user script
+    "settingsUserscriptsReviewUpdate": "Review update to version %v", //%v is a version number
+    "settingsUserscriptsDownloading": "Downloading files it needs…",
+    "settingsUserscriptsDownloadFailed": "Not running: a file it needs couldn't be downloaded (%s)", //%s is an error message
+    "settingsUserscriptsUpdateFailed": "Update check failed: %s", //%s is an error message
+    "settingsUserscriptsFrom": "From %s", //%s is a website, like greasyfork.org
+    "settingsUserscriptsLocal": "Local file",
+    "settingsUserscriptsRunsOn": "Runs on: %s", //%s is a list of websites
+    "settingsUserscriptsLegacy": "Older Min script (no metadata block)",
     "settingsUserAgentToggle": "Use a custom user agent",
     "settingsUpdateNotificationsToggle": "Automatically check for updates",
     "settingsUsageStatisticsToggle": {

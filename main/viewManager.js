@@ -135,6 +135,11 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
   })
 
   view.webContents.on('ipc-message', function (e, channel, data) {
+    // userscript messages are handled in main/userscript*.js, and can be large (saved values, request bodies)
+    if (channel.startsWith('userscripts-')) {
+      return
+    }
+
     var senderURL
     try {
       senderURL = e.senderFrame.url

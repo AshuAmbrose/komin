@@ -81,6 +81,7 @@ const createPackage = function (platform, extraOptions) {
       // localization files are compiled and copied to dist
       '!localization/',
       '!scripts/',
+      '!test/',
       // These are bundled in.
       '!**/main',
       // parts of modules that aren"t needed

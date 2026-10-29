@@ -272,3 +272,82 @@ html {
 .site-permission-delete-button:hover {
   opacity: 1;
 }
+
+/* Userscripts list */
+
+#userscripts-manager {
+  margin: 0.75em 0 0 1.58em;
+  max-width: 650px;
+}
+
+#userscripts-actions {
+  margin-bottom: 0.6em;
+}
+
+#userscripts-actions a,
+#userscripts-actions span {
+  font-size: 14px;
+  margin-right: 1em;
+  cursor: pointer;
+}
+
+#userscripts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+.userscript-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6em;
+  padding: 0.6em 0.8em;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.dark-mode .userscript-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.userscript-item input[type="checkbox"] {
+  margin-top: 0.2em;
+}
+
+.userscript-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.userscript-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.userscript-detail,
+.userscript-detail a {
+  font-size: 13px;
+  margin-top: 0.2em;
+  overflow-wrap: anywhere;
+}
+
+.userscript-detail a {
+  cursor: pointer;
+}
+
+.userscript-error {
+  color: rgb(190, 60, 40);
+}
+
+.dark-mode .userscript-error {
+  color: rgb(240, 120, 100);
+}
+
+.userscript-actions a {
+  font-size: 13px;
+  margin-left: 0.8em;
+  cursor: pointer;
+  white-space: nowrap;
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- title is set in JS -->
+
+    <link rel="stylesheet" href="../../css/base.css" />
+    <link rel="stylesheet" href="../settings/settings.css" />
+    <link rel="stylesheet" href="install.css" />
+  </head>
+
+  <body>
+    <div class="short-hero blue-gradient-background">
+      <div class="container">
+        <h2 id="heading" data-string="userscriptInstallHeading"></h2>
+      </div>
+    </div>
+
+    <div class="settings-container">
+      <p id="status" data-string="userscriptInstallLoading"></p>
+
+      <div id="details" hidden>
+        <div id="script-header">
+          <img id="script-icon" alt="" hidden />
+          <div>
+            <div id="script-name"></div>
+            <div id="script-meta" class="light-fade"></div>
+          </div>
+        </div>
+        <p id="script-description"></p>
+
+        <ul id="warnings"></ul>
+
+        <dl id="permissions"></dl>
+
+        <div id="buttons">
+          <button id="install-button" class="primary-button"></button>
+          <button id="cancel-button" data-string="userscriptCancelButton"></button>
+        </div>
+
+        <details id="code-section">
+          <summary data-string="userscriptShowCode"></summary>
+          <pre id="code"></pre>
+        </details>
+      </div>
+    </div>
+
+    <script src="../../js/util/settings/settingsContent.js"></script>
+    <script src="../../js/util/theme.js"></script>
+    <script src="../../dist/localization.build.js"></script>
+    <script src="../../js/util/userscriptPages.js"></script>
+    <script src="install.js"></script>
+  </body>
+</html>
