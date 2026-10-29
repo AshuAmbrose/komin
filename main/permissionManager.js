@@ -31,6 +31,10 @@ function updateActiveMediaPermissions (contents, kind, isActive) {
 
   if (isActive) {
     record[kind] = (record[kind] || 0) + 1
+    // a tab that starts using the camera, microphone or screen gets normal memory priority back straight away
+    if (typeof restoreTabMemoryPriority === 'function') {
+      restoreTabMemoryPriority(contents)
+    }
   } else {
     record[kind] = Math.max(0, (record[kind] || 0) - 1)
   }
