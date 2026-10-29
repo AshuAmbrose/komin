@@ -542,6 +542,10 @@ app.on('web-contents-created', function (e, wc) {
   wc._isMediaPlaying = false
   wc.on('media-started-playing', function () {
     wc._isMediaPlaying = true
+    // a background tab that starts playing gets normal memory priority back straight away
+    if (typeof restoreTabMemoryPriority === 'function') {
+      restoreTabMemoryPriority(wc)
+    }
   })
   wc.on('media-paused', function () {
     wc._isMediaPlaying = false

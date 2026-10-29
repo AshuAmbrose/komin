@@ -295,6 +295,7 @@ function setView (id, senderContents) {
       win.getContentView().removeChildView(viewMap[id])
     }
     windows.getState(win).selectedView = id
+    restoreTabMemoryPriority(viewMap[id].webContents)
 
     if (typeof scheduleInactiveTabTrim === 'function') {
       scheduleInactiveTabTrim()
@@ -496,6 +497,8 @@ const HIBERNATION_IDLE_TIME = 15 * 60 * 1000 // 15 minutes before disposable tab
 let inactiveTabTrimTimeout = null
 let inactiveTabTrimInterval = null
 let hibernationCheckInterval = null
+// renderer processes given low memory priority while their tabs are in the background (Windows only)
+const lowMemoryPriorityPids = new Set()
 
 // OS process ids of every frame in a page, including cross-site iframes (ads, embeds) that run in their own processes
 function getFramePids (contents) {
@@ -506,7 +509,8 @@ function getFramePids (contents) {
   }
 }
 
-function getInactiveTabPids () {
+// splits tab processes into inactive ones (to trim and give low memory priority) and protected ones (left alone)
+function getTabProcessGroups () {
   const activeViewIds = new Set()
   windows.getAll().forEach(function (win) {
     const selected = windows.getState(win)?.selectedView
@@ -545,26 +549,58 @@ function getInactiveTabPids () {
     }
   }
 
-  return [...inactivePids].filter(pid => pid && !protectedPids.has(pid))
+  return {
+    inactivePids: [...inactivePids].filter(pid => pid && !protectedPids.has(pid)),
+    protectedPids: [...protectedPids]
+  }
+}
+
+// gives processes that were lowered while their tab was in the background normal memory priority again
+function restoreMemoryPriority (pids) {
+  const lowered = pids.filter(pid => lowMemoryPriorityPids.has(pid))
+  if (lowered.length === 0) {
+    return
+  }
+  lowered.forEach(pid => lowMemoryPriorityPids.delete(pid))
+
+  const trimmerPath = path.join(__dirname, 'ext/windows/trimMemory.exe')
+  if (fs.existsSync(trimmerPath)) {
+    execFile(trimmerPath, ['--no-trim', '--memory-priority', 'normal'].concat(lowered.map(String)), { windowsHide: true }, function () {})
+  }
+}
+
+// called when a tab is selected, or starts playing media or capturing
+function restoreTabMemoryPriority (contents) {
+  if (contents && !contents.isDestroyed()) {
+    restoreMemoryPriority(getFramePids(contents))
+  }
 }
 
 function trimInactiveTabsNow () {
   if (process.platform !== 'win32') {
     return
   }
+  const { inactivePids, protectedPids } = getTabProcessGroups()
+
+  // forget processes that have exited, and restore any lowered process whose tab is protected again
+  const livePids = new Set(app.getAppMetrics().map(m => m.pid))
+  lowMemoryPriorityPids.forEach(pid => { if (!livePids.has(pid)) lowMemoryPriorityPids.delete(pid) })
+  restoreMemoryPriority(protectedPids)
+
   // Pause if file downloads are active
   if (typeof hasActiveDownloads === 'function' && hasActiveDownloads()) {
     return
   }
-  const inactivePids = getInactiveTabPids()
   if (inactivePids.length === 0) {
     return
   }
 
   const trimmerPath = path.join(__dirname, 'ext/windows/trimMemory.exe')
   if (fs.existsSync(trimmerPath)) {
-    // Empty working set exclusively for inactive tabs' renderer processes, including their cross-site frames
-    execFile(trimmerPath, inactivePids.map(String), { windowsHide: true }, function () {})
+    // Empty working set exclusively for inactive tabs' renderer processes, including their cross-site frames.
+    // Low memory priority makes Windows reuse their memory first when another program needs it
+    execFile(trimmerPath, ['--memory-priority', 'low'].concat(inactivePids.map(String)), { windowsHide: true }, function () {})
+    inactivePids.forEach(pid => lowMemoryPriorityPids.add(pid))
   }
 }
 

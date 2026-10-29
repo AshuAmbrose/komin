@@ -65,6 +65,7 @@ node scripts/buildWindows.js --arch=x64   # package x64 only (run `npm run build
 npm run buildWindows        # build + package x64, ia32, arm64 (slow)
 npm run buildWindowsDev     # "Min-Dev" variant with a separate app identity
 npm run updateFilters       # refresh ext/filterLists/easylist+easyprivacy-noelementhiding.txt (offline fallback list)
+node scripts/buildTrimMemory.js   # rebuild ext/windows/trimMemory.exe from scripts/trimMemory.cs (Windows' built-in C# compiler)
 ```
 
 Development details:
@@ -161,7 +162,7 @@ Consequences of the concatenation:
 |---|---|
 | `windowManagement.js` | global `windows`: `addWindow`, `removeWindow`, `getCurrent` (last focused), `getAll`, `getState(win)` (**throws** if the window was removed), `windowFromContents`. Quits when the last window closes (except macOS). |
 | `main.js` | startup, `createWindow`/`createWindowWithBounds`, `sendIPCToWindow`, `getWindowWebContents`, `handleCommandLineArguments`, window events. Also memory trimming of the whole app (`trimMemoryNow`, `trimMemoryIfInactive`, `startBackgroundTrimming`), the media guards `isTabActiveWithMedia` and `getProtectedPids`, `hasActiveDownloads`, the tab-state relay (`tab-state-change`), and the places/translation channel setup. |
-| `viewManager.js` | tab views: globals `viewMap`, `viewStateMap`, `tabLastActivity`. Functions `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `getView`, `getTabIDFromWebContents`, `getWindowFromViewContents`. `callViewMethod` lets the UI call any `webContents` method. It forwards page events (`view-event`) and page IPC (`view-ipc`) to the UI. Also tab memory trimming (`getInactiveTabPids`, `trimInactiveTabsNow`, `scheduleInactiveTabTrim`) and hibernation (`isTabImmuneFromHibernation`, `checkSmartHibernation`). |
+| `viewManager.js` | tab views: globals `viewMap`, `viewStateMap`, `tabLastActivity`. Functions `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `getView`, `getTabIDFromWebContents`, `getWindowFromViewContents`. `callViewMethod` lets the UI call any `webContents` method. It forwards page events (`view-event`) and page IPC (`view-ipc`) to the UI. Also tab memory trimming and memory priority (`getTabProcessGroups`, `trimInactiveTabsNow`, `scheduleInactiveTabTrim`, `restoreTabMemoryPriority`, `lowMemoryPriorityPids`) and hibernation (`isTabImmuneFromHibernation`, `checkSmartHibernation`). |
 | `filtering.js` | network blocking + Ghostery engine + cosmetic filters + scriptlets + tracking-parameter removal (section 10.2) |
 | `download.js` | `will-download` handling (`downloadHandler`, `currrentDownloadItems`; the triple `r` is an upstream typo, keep it). Also `onHeadersReceived` (PDF to viewer, file-view detection, CORS for `min://` UI/reader/PDF pages, ad-block CSP) and `onBeforeRedirect` |
 | `UASwitcher.js` | strips `Min`/`Electron` from the user agent; `customUserAgent` setting; Firefox UA and no `Sec-CH-UA*` headers for `accounts.google.com` (Google sign-in) |
@@ -210,7 +211,7 @@ Consequences of the concatenation:
   - `xregexp`
   - `textColor` (a tiny neural net that picks tab text color)
   - `icons`
-  - `windows/trimMemory.exe` (prebuilt; source `scripts/trimMemory.cs`; no build script)
+  - `windows/trimMemory.exe` (committed binary, built from `scripts/trimMemory.cs` by `node scripts/buildTrimMemory.js` as a windowed app, so starting it doesn't also start a console host process; see section 10.4 for its arguments)
 - `localization/languages/*.json` holds translations. Code uses `l('stringId')`; static HTML uses `data-string`, `data-label` and `data-value` attributes. Add new user-visible strings to `en-US.json`.
 
 ## 8. IPC catalogue
@@ -387,10 +388,18 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - `getProtectedPids()` excludes media and capture tabs. Process names are `min`, or `Min-Dev` for dev apps. When running unpackaged (`npm start`), the processes are named `electron.exe`, so whole-app trimming matches nothing there; only inactive-tab trimming runs.
 - The `powerMonitor` suspend/resume listeners are added per window and removed on `closed`.
 
-**Inactive-tab trimming** (`viewManager.js`). Every 60 s, and 30 s after a tab switch, `getInactiveTabPids` trims tabs inactive for 30 s or more.
+**Inactive-tab trimming and memory priority** (`viewManager.js`). Every 60 s, and 30 s after a tab switch, `trimInactiveTabsNow` uses `getTabProcessGroups` to split tab processes into inactive and protected ones. Inactive means the tab hasn't been used for 30 s or more.
 
+- Inactive processes are trimmed and given **low memory priority** (`trimMemory.exe --memory-priority low <pids>`). They're remembered in `lowMemoryPriorityPids`.
 - It includes their cross-site frame processes (ads, embeds), found with `getFramePids`, which uses `webContents.mainFrame.framesInSubtree` and each frame's `osProcessId`.
-- It never trims a process that also serves a protected tab (selected, media or capture, or used in the last 30 s) or the browser UI. Chromium can share one process between tabs.
+- It never touches a process that also serves a protected tab (selected, media or capture, or used in the last 30 s) or the browser UI. Chromium can share one process between tabs.
+- **Normal priority comes back** (`trimMemory.exe --no-trim --memory-priority normal <pids>`):
+  - straight away when the tab is selected (`setView`);
+  - when it starts playing media (`media-started-playing` in `main.js`);
+  - when it starts capturing (`updateActiveMediaPermissions` in `permissionManager.js`);
+  - otherwise at the next 60 s pass, for any lowered process that is protected again. Pids of exited processes are dropped then too.
+- **What memory priority does:** pages a process loads after the change get that priority. Windows trims low-priority pages first and reuses them first from its standby cache. A trimmed background tab's pages therefore come back at low priority and are the first RAM Windows gives to another program. It never reduces Min's reserved memory, and does nothing while RAM is plentiful.
+- **Chromium's own settings:** it already sets background tabs' CPU priority to Idle, but leaves every process at normal memory priority (5) (checked 2026-10-29). Min can raise and lower renderer memory priority from outside: renderer processes accept `SetProcessInformation`.
 
 **Hibernation** (`checkSmartHibernation`, every 5 min). It sends `hibernateTab`; the UI then destroys the view, and the tab reloads when selected.
 
@@ -419,7 +428,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 
 **Not done yet** (candidates):
 
-- EcoQoS / Efficiency mode and low memory priority while unfocused, skipping call tabs;
+- EcoQoS / Efficiency mode while unfocused, skipping call tabs (background tabs' CPU priority is already Idle, set by Chromium; low memory priority is done per tab);
 - removing the hibernation probe's wake-ups;
 - skipping the blur screenshot;
 - a persistent trimming helper instead of spawning `trimMemory.exe` every minute.
