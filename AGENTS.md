@@ -2,7 +2,7 @@
 
 Context for AI coding agents (and humans) working on this repository. Read it fully before changing code: it records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
 
-This file describes the code as of commit `ec0967b3` on branch `fix/review-findings`. When the code and this file disagree, the code wins. Fix this file in the same change.
+This file describes the code as of commit `edd15667` on `master`. When the code and this file disagree, the code wins. Fix this file in the same change.
 
 ---
 
@@ -408,6 +408,16 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - How unsaved input is detected: `js/preload/default.js` tracks fields the user changed through trusted `input`/`change` events. Changed means text that differs from the field's default value, a checkbox or radio whose checked state differs from its default, or a contenteditable with text. Submitting a form clears its fields. The attribute is recomputed on each change and when the page is hidden.
 - Don't go back to scanning `input.value`. Checkboxes and radios always have a value (`"on"`), and pages pre-fill search boxes, so that check made nearly every site permanently immune (measured: 6 of 8 tabs).
 - The probe runs `executeJavaScript` in idle tabs, which pulls trimmed memory back in.
+
+**Measured and rejected: asking tabs to free memory.** Trimming moves memory out of RAM but leaves it reserved (private/commit). To find out whether live background tabs would actually release memory, every background page and cross-site frame (13 CDP targets) was sent `HeapProfiler.collectGarbage`, then `Memory.simulatePressureNotification {level: 'critical'}` + GC. The setup was 10 tabs in the dev build (2026-10-29).
+
+| | Alive | After GC | After pressure signal |
+|---|---|---|---|
+| All background tabs (private) | 1,309 MB | 1,277 MB | 1,260 MB (−49 MB, 4%) |
+
+- Best case: YouTube home, −22 MB (14%). Chat tabs: WhatsApp −8 MB, Discord 0. The freed memory didn't come back within 90 s, but there was little of it.
+- Background pages' memory is live state (JS heap, DOM, compiled code, per-process baseline), not caches.
+- Don't build a purge feature. Only hibernation (closing the process) releases memory in bulk. Tabs that must stay alive (chats, calls, media) keep roughly 100–160 MB each.
 
 **Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. Audio, calls and notifications continue.
 
