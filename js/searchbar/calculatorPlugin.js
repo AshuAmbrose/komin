@@ -2,7 +2,6 @@
   this plugin will provide the ability to perform simple calculations
 */
 
-const { clipboard } = require('electron')
 const searchbarPlugins = require('searchbar/searchbarPlugins.js')
 const Parser = require('expr-eval').Parser
 
@@ -55,7 +54,7 @@ function doMath (text, input, inputFlags) {
       const titleEl = item.querySelector('.title')
       const descriptionBlockEl = item.querySelector('.description-block')
 
-      clipboard.writeText(titleEl.innerText)
+      ipc.invoke('clipboardWrite', { text: titleEl.innerText })
       descriptionBlockEl.innerText = `${l('copied')}!`
     })
   }

@@ -412,14 +412,18 @@ ipc.on('loadURLInView', function (e, args) {
   loadURLInView(args.id, args.url, win)
 })
 
+// these moved to webContents.navigationHistory; the webContents versions are deprecated
+var navigationHistoryMethods = ['canGoBack', 'canGoForward', 'goBack', 'goForward', 'goToIndex', 'goToOffset', 'canGoToOffset', 'getActiveIndex']
+
 ipc.on('callViewMethod', function (e, data) {
   var error, result
   try {
     var webContents = viewMap[data.id].webContents
-    var methodOrProp = webContents[data.method]
+    var target = navigationHistoryMethods.includes(data.method) ? webContents.navigationHistory : webContents
+    var methodOrProp = target[data.method]
     if (methodOrProp instanceof Function) {
       // call function
-      result = methodOrProp.apply(webContents, data.args)
+      result = methodOrProp.apply(target, data.args)
     } else {
       // set property
       if (data.args && data.args.length > 0) {

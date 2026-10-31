@@ -60,7 +60,8 @@ async function afterPackageBuilt (path, arch) {
     })
 }
 
-const arches = [Arch.x64, Arch.armv7l, Arch.arm64];
+// no armv7l: Electron stopped building 32-bit ARM Linux in version 44
+const arches = [Arch.x64, Arch.arm64];
 
 (async () => {
   for (const arch of arches) {

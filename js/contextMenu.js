@@ -48,7 +48,7 @@ module.exports = {
             inputMenu[1].push({
               label: l('pasteAndGo'),
               click: function () {
-                searchbar.openURL(electron.clipboard.readText())
+                ipc.invoke('clipboardReadText').then(text => searchbar.openURL(text))
               }
             })
           }

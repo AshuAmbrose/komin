@@ -301,11 +301,9 @@ ipc.on('userscripts-set-clipboard', function (event, args) {
     return
   }
   const text = String(args.data)
-  if (/html/i.test(args.type || '')) {
-    electron.clipboard.write({ html: text, text })
-  } else {
-    electron.clipboard.writeText(text)
-  }
+  writeToClipboard(/html/i.test(args.type || '') ? { html: text, text } : { text }).catch(function (e) {
+    console.warn('GM_setClipboard failed', e)
+  })
 })
 
 /* GM_notification: a system notification; clicks and closing are reported back to the script */
