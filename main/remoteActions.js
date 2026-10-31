@@ -31,6 +31,34 @@ function showFocusModeDialog2() {
 
 ipc.handle('showFocusModeDialog2', showFocusModeDialog2)
 
+/* The clipboard (renderers can't use Electron's clipboard module since Electron 44). data: {text, html, bookmark} */
+function writeToClipboard (data) {
+  const item = {}
+  if (typeof data.text === 'string') {
+    item['text/plain'] = data.text
+  }
+  if (typeof data.html === 'string') {
+    item['text/html'] = data.html
+  }
+  if (typeof data.bookmark === 'string' && typeof data.text === 'string') {
+    item['electron application/bookmark'] = { title: data.bookmark, url: data.text }
+  }
+  return electron.clipboard.write([new electron.ClipboardItem(item)])
+}
+
+ipc.handle('clipboardReadText', function (e) {
+  if (!windows.windowFromContents(e.sender)) {
+    return ''
+  }
+  return electron.clipboard.readText()
+})
+
+ipc.handle('clipboardWrite', function (e, data) {
+  if (windows.windowFromContents(e.sender) && data) {
+    return writeToClipboard(data)
+  }
+})
+
 ipc.handle('showOpenDialog', async function (e, options) {
   const result = await dialog.showOpenDialog(windows.windowFromContents(e.sender).win, options)
   return result.filePaths

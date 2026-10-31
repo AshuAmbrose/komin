@@ -1,8 +1,29 @@
 # AGENTS.md
 
-Context for AI coding agents (and humans) working on this repository. Read it fully before changing code: it records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
+Context for AI coding agents (and humans) working on this repository. It records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
 
-This file describes the code as of `master` at `4d846aa3` plus the `feat/userscripts-core` branch. When the code and this file disagree, the code wins. Fix this file in the same change.
+This file describes the code as of `master` at `36f09628` plus the `chore/electron-45` branch (Electron 45.1). When the code and this file disagree, the code wins. Fix this file in the same change.
+
+---
+
+## 0. Start here
+
+**Read sections 0–2 always.** Then read only what your task touches: the repository map (7), the IPC catalogue (8) and the subsystem you're changing (10.x). Check the pitfalls (14) before testing or debugging.
+
+**Where things stand (2026-11-01):**
+
+- `master` has the fork's core work: the permission manager, low-resource mode (trimming, per-tab memory priority, 15-minute hibernation), Ghostery ad blocking, and userscripts (PR #8).
+- `chore/electron-45` upgrades Electron 43.4.1 → 45.1.0 (Chromium 156), with the fixes it needed (clipboard through main, async `safeStorage`, `navigationHistory`, no 32-bit builds). All checks passed: section 15 lists what is still unchecked.
+- **Next: Chrome extension support** (section 15 has the decisions and phase order). After that, the maintainer tests everything together.
+
+**Working with the maintainer:**
+
+- They're new to browser development. Explain in plain language, say what you measured, and say what you didn't check.
+- Commit and push only when asked. They usually test before committing.
+- `master` is protected: work on a branch and give them a PR title and description. The GitHub CLI isn't installed on their machine, so they open PRs themselves.
+- Their local `package.json` has an uncommitted `"version": "1.35.8"`. Keep it out of commits (stage the other hunks only).
+- Their dev profile (`%APPDATA%\Min-development`) holds their own test data. Back it up and put it back around automated runs (section 13).
+- They have a beginner's guide, "Inside Min" (a claude.ai artifact). It mirrors sections 5–10 in plain language. When the architecture changes, tell them the guide needs the same update.
 
 ---
 
@@ -46,7 +67,7 @@ This file describes the code as of `master` at `4d846aa3` plus the `feat/userscr
 
 | Thing | Version / detail |
 |---|---|
-| Electron | 43.4.1 (`package.json` `electronVersion` and devDependency), bundling Chromium 150 |
+| Electron | 45.1.0 (`package.json` `electronVersion` and devDependency, pinned exactly), bundling Chromium 156 and Node 24 |
 | Ad blocking | `@ghostery/adblocker-electron` 2.20.1 (with `@ghostery/adblocker`, `-content`, `-electron-preload`, `-extended-selectors` at the same version) |
 | UI bundler | browserify 16 + `electron-renderify` |
 | Packaging | electron-builder 24, `electron-installer-windows` (Squirrel), archiver |
@@ -58,13 +79,14 @@ This file describes the code as of `master` at `4d846aa3` plus the `feat/userscr
 
 ```bash
 npm install                 # postinstall runs scripts/setupDevEnv.js (flips an Electron fuse on node_modules/electron)
+                            # since Electron 42 the binary is downloaded on first use (require('electron'), npx electron), not by npm install
 npm start                   # npm run build, then concurrently: scripts/watch.js + `electron . --development-mode`
 npm run build               # buildMain + buildBrowser + buildBrowserStyles + buildPreload
 npm test                    # lint only (standard)
 npm run test:unit           # unit tests (node:test, test/*.test.js); only the userscript matcher has them so far
 npm run lint                # REWRITES files (prettier --write, standard --fix)
 node scripts/buildWindows.js --arch=x64   # package x64 only (run `npm run build` first)
-npm run buildWindows        # build + package x64, ia32, arm64 (slow)
+npm run buildWindows        # build + package x64 and arm64 (slow; Electron 44+ has no 32-bit Windows or ARM Linux builds)
 npm run buildWindowsDev     # "Min-Dev" variant with a separate app identity
 npm run updateFilters       # refresh ext/filterLists/easylist+easyprivacy-noelementhiding.txt (offline fallback list)
 node scripts/buildTrimMemory.js   # rebuild ext/windows/trimMemory.exe from scripts/trimMemory.cs (Windows' built-in C# compiler)
@@ -172,7 +194,7 @@ Consequences of the concatenation:
 | `minInternalProtocol.js` | `min://` scheme (privileged: standard, secure, supportFetchAPI). `registerBundleProtocol(ses)` serves only host `app` from the app directory and rejects path traversal |
 | `menu.js`, `touchbar.js` | app menu (sends commands to the UI through `sendIPCToWindow`), dock menu, macOS Touch Bar |
 | `remoteActions.js`, `remoteMenu.js`, `prompt.js` | `ipc.handle` wrappers for main-only APIs (dialogs, window controls, file drag, clear storage), native context menus, modal prompt windows |
-| `keychainService.js` | built-in password store: `<userData>/passwordStore`, encrypted with `safeStorage` |
+| `keychainService.js` | built-in password store: `<userData>/passwordStore`, encrypted with `safeStorage`'s async methods (the sync ones are deprecated in 45 and removed in 46; files written with them still decrypt). Operations are queued so concurrent saves don't overwrite each other. |
 | `registryConfig.js` | Windows default-browser registry keys (on Squirrel install, update and uninstall) |
 | `themeMain.js` | `darkMode` setting to `nativeTheme.themeSource`, `darkThemeIsActive` |
 | `userscripts.js`, `userscriptAPI.js`, `userscriptInstall.js` | userscripts (section 10.8): loading, matching each frame, saved values and menu commands; the Greasemonkey functions that need main (`GM_xmlhttpRequest`, `GM_download`, `GM_openInTab`, `GM_setClipboard`, `GM_notification`, resources); installing, `@require`/`@resource` downloads, updates, and the requests from the install page and Settings |
@@ -227,7 +249,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 |---|---|
 | Views (`viewManager.js`) | `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `callViewMethod`, `getCapture`, `saveViewCapture`, `getNavigationHistory` (handle) |
 | Window and app (`main.js`) | `set-window-title`, `focusMainWebContents`, `showSecondaryMenu`, `quit`, `handoffUpdate`, `tab-state-change`, `request-tab-state`, `return-tab-state` (once), `places-connect`, `page-translation-session-create` |
-| `remoteActions.js` (handle) | `minimize`, `maximize`, `unmaximize`, `close`, `setFullScreen`, `showOpenDialog`, `showSaveDialog`, `showItemInFolder`, `startFileDrag`, `clearStorageData`, `addWordToSpellCheckerDictionary`, `showFocusModeDialog2`. Also `newWindow` (on) |
+| `remoteActions.js` (handle) | `minimize`, `maximize`, `unmaximize`, `close`, `setFullScreen`, `showOpenDialog`, `showSaveDialog`, `showItemInFolder`, `startFileDrag`, `clearStorageData`, `addWordToSpellCheckerDictionary`, `showFocusModeDialog2`, `clipboardReadText`, `clipboardWrite` (`{text, html, bookmark}`; UI only: renderers can't use Electron's `clipboard` since Electron 44, and the main-process API is async). Also `newWindow` (on) |
 | Filtering | `inject-cosmetic-filters` (`filtering.js`, sent by the preload) |
 | Permissions (`permissionManager.js`) | `permissionGranted`, `permissionDenied` (from the UI), `media-access-status` (from the preload) |
 | Downloads | `cancelDownload` (`download.js`) |
@@ -282,7 +304,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
   - `webviews.update(tabId, url)` runs `urlParser.parse`, then sends `loadURLInView`.
   - `webviews.destroy` sends `destroyView`.
 - **Page events** reach the UI as `view-event` and are dispatched to `webviews.bindEvent(name, fn)` handlers. Main drops subframe `did-start-navigation`/`will-redirect` and subframe `did-navigate-in-page` events.
-- **`callViewMethod`** calls a method or sets a property on the view's `webContents`, then replies `async-call-result`. Callers use `webviews.callAsync(id, method, argsOrCallback, callback)`.
+- **`callViewMethod`** calls a method or sets a property on the view's `webContents`, then replies `async-call-result`. History methods (`canGoBack`, `goBack`, `goToIndex`, ...) are called on `webContents.navigationHistory`, since the `webContents` versions are deprecated. Callers use `webviews.callAsync(id, method, argsOrCallback, callback)`.
 - **Popups** reuse the default web preferences. `filterPopups(url)` in `filtering.js` blocks popups that the ad-block engine matches.
 
 ### 10.2 Ad blocking (`main/filtering.js`)
@@ -432,7 +454,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - Background pages' memory is live state (JS heap, DOM, compiled code, per-process baseline), not caches.
 - Don't build a purge feature. Only hibernation (closing the process) releases memory in bulk. Tabs that must stay alive (chats, calls, media) keep roughly 100–160 MB each.
 
-**Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. Audio, calls and notifications continue.
+**Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. On Electron 45 the covered case still measures 0 fps; the visible case and the flicker check haven't been redone (the screen was locked during testing, which hides every window). Audio, calls and notifications continue.
 
 **Other:**
 
@@ -537,7 +559,7 @@ Compatible with Tampermonkey/Violentmonkey scripts (Greasy Fork, OpenUserJS, Git
 | `xmlhttpRequest` | Sent by main with `net.request` in the tab's session (cookies included unless `anonymous`). Only to the page's own host and `@connect` domains (a domain includes its subdomains; `*` = anything); anything else gets `onerror` with an explanation. Supports method, headers, body (string, ArrayBuffer, typed array, Blob, FormData, URLSearchParams), `responseType` (text, json, arraybuffer, blob, document), `responseXML`, `timeout`, `abort()`, redirects (`finalUrl`), progress events. Responses over 64 MB fail. |
 | `download` | `webContents.downloadURL`; the suggested name is the save dialog's default. Same host rules as `xmlhttpRequest` (data: and blob: always allowed). |
 | `openInTab` | The UI opens the tab (`userscripts-open-tab`), next to the current one, in the background unless `active`. The returned object's `close()` works; `closed`/`onclose` don't update (it's a copy). |
-| `setClipboard`, `notification` | Main's `clipboard` and `Notification` (`onclick`, `ondone`, `timeout`; `image` as a data: or http(s) URL). |
+| `setClipboard`, `notification` | Main's `clipboard` (through `writeToClipboard` in `remoteActions.js`) and `Notification` (`onclick`, `ondone`, `timeout`; `image` as a data: or http(s) URL). |
 | `registerMenuCommand`, `unregisterMenuCommand` | Shown under "Userscript commands" in the page's right-click menu. Main keeps them per frame and clears a frame's commands when it loads a new document. |
 | `getResourceText`, `getResourceURL` | A synchronous request for the cached file when first used; the URL is a `blob:` URL (or `data:` with `isBlobUrl` false). |
 | `log` | `console.log` with the script's name. |
@@ -572,7 +594,7 @@ Not supported: `GM_cookie`, `GM_webRequest`, `GM_getTab`/`saveTab`/`getTabs`, `w
 - **Style:** JavaScript Standard Style. 2 spaces, single quotes, **no semicolons**, a space before function parentheses. Older code uses `var` and `function () {}`; match the file you're editing. Keep comments short, as in the surrounding code.
 - **Globals** declared in `package.json` → `standard.globals`: `l`, `tabs`, `tasks`, `globalArgs`, `platformType`, `throttle`, `debounce`, `empty`, and others.
 - **User-visible text** goes through `l('key')`, with the English string added to `localization/languages/en-US.json`.
-- **Commits** use a conventional prefix (`feat:`, `fix:`, `perf:`, `feat(filtering):`), with a body listing changes as bullets. Branches are named `feat/…`, `fix/…`, `perf/…`. Open a PR into `master`.
+- **Commits** use a conventional prefix (`feat:`, `fix:`, `perf:`, `chore:`, `feat(filtering):`), with a body listing changes as bullets. Branches are named `feat/…`, `fix/…`, `perf/…`, `chore/…`. Open a PR into `master`.
 - **Don't reformat unrelated code.** `npm run lint` rewrites files, so don't run it as part of an unrelated change. `js/preload/siteUnbreak.js` lacks a trailing newline upstream; leave it.
 
 ## 13. Verifying changes
@@ -595,13 +617,18 @@ Apart from the userscript matcher's unit tests (`npm run test:unit`), there are 
   - Use `Get-CimInstance Win32_Process` (filter `electron.exe` under `node_modules\electron\dist`; `--type=` in the command line identifies renderer, gpu-process and so on), plus `Get-Process` for `PrivateMemorySize64` and `TotalProcessorTime`.
   - GPU: `Get-Counter '\GPU Engine(pid_<pid>_*)\Utilization Percentage'`.
 - **Never touch the user's real profile** (`%APPDATA%\Min`) in experiments. If you must temporarily patch `main.build.js` for an A/B test, back it up and restore it, or rebuild with `npm run buildMain`.
+- **The dev profile holds the user's own test data too.** A test script must back up what it changes there and put it back (`settings.json`, `sessionRestore.json`, `passwordStore`; move `userscripts/` and `userscriptData/` aside instead of deleting them). Running the app also rewrites `sessionRestore.json`.
+- **Comparing Electron versions:** install the other version in a separate folder (`npm install electron@<version>` there) and launch it with `cwd` set to the repo, so both run the same app code.
+- **YouTube rations ads per visitor.** The dev profile keeps its YouTube cookies, so consecutive test runs alternate: one gets an ad (and in-app clicks stall about 20 s), the next doesn't. Alternating two builds (A, B, A, B) therefore makes one build look worse. Run each build at least twice in a row before blaming it.
+- **A locked screen** counts as covering every window: visible-window tests (frames per second, flicker) give 0 while Windows is locked (`LogonUI` running).
+- **Electron 45 measurements** (10 real tabs, two runs each, versus 43): private memory 1,673 vs 1,647 MB with all tabs alive (+1.6%, inside the 74 MB run-to-run spread), 406 vs 414 MB after hibernating them; browser, UI, utility and history processes identical; GPU process 10 MB smaller.
 - **Testing occlusion:** a window launched from a background process may open *behind* other windows. Force it on top first, for example with `SetWindowPos(HWND_TOPMOST)` through PowerShell `Add-Type`.
 
 ## 14. Pitfalls already hit (don't repeat them)
 
 1. A `windows.getFocused()` call doesn't exist. Use `windows.getCurrent()`.
 2. App-wide emitters (`powerMonitor`, `app`, `screen`) added inside per-window code must be removed when the window closes, or they act on dead windows.
-3. `wc.isCapturing()` doesn't exist in Electron 43.
+3. `wc.isCapturing()` doesn't exist in Electron.
 4. Session-scoped state must be keyed by `session`, or private and normal tabs leak into each other.
 5. The ad-block cache never refreshed. Engine caches need an age-based refresh and an offline fallback.
 6. Ghostery's `onInjectCosmeticFilters` breaks pages (section 10.2). So does `userGesture: true`.
@@ -623,10 +650,14 @@ Apart from the userscript matcher's unit tests (`npm run test:unit`), there are 
 - Userscripts: unsupported functions (`GM_cookie`, `GM_getTab`/`saveTab`/`getTabs`, `window.onurlchange`), and `GM_openInTab`'s `closed`/`onclose`. Add them if real scripts need them.
 - Chrome extension support (planned, not started). Decisions so far:
   - Aim for any Chrome Web Store extension, installed as in Chrome ("Add to Chrome", permission review, automatic updates). Load unpacked and `.crx` files too.
-  - Upgrade Electron first (45.1 or later). 43.4.1 doesn't deliver MV3 service-worker events. Electron 45 removes `clipboard` from the renderer (used by `js/contextMenu.js`, `js/defaultKeybindings.js`, `js/searchbar/calculatorPlugin.js`, `js/webviewMenu.js`), reports screen capture as `display-capture`, and has no 32-bit Windows build.
+  - Electron is upgraded to 45.1 (43.4.1 didn't deliver MV3 service-worker events).
   - Any `session.webRequest` listener turns off extensions' `chrome.webRequest` and `declarativeNetRequest` for that session (still true in Electron 45.1, `HasListener()` in `electron_browser_client.cc`). DNR does work when there is no listener (probe, Electron 43). So a network-filtering extension can only work if Min removes all four hooks from `persist:webcontent`. Warn before installing one that it turns off Min's ad blocker; offer to install it without network access instead. Private tabs keep Min's ad blocker (extensions don't run there).
   - The hooks' other jobs need replacements in that mode: the Google sign-in user agent and tracking-parameter removal (static DNR rules in a built-in extension), PDF and userscript-install detection (`will-download`, or a navigation listener plus a HEAD request), file-view detection (the preload), and the reader/PDF pages' cross-origin fetches (through the main process).
   - Zero cost with no extensions installed. Heavy extensions are the user's choice; Min only shows their memory/CPU and warns.
+  - Library: `electron-chrome-extensions` (MIT since 4.10.0) for the APIs Electron lacks (action/popups, tabs, windows, contextMenus, notifications…); `electron-chrome-web-store` (MIT, 0.13) or our own code for store installs. That library doesn't verify CRX signatures, so Min must. Untested with Min's `BaseWindow` + `WebContentsView` layout.
+  - Not possible in Electron: `chrome.userScripts` (Tampermonkey; Min's userscripts replace it), `chrome.identity.getAuthToken` (Google sign-in), side panel. Electron 45's `clearStorageData` also unregisters extension service workers, so Min's "clear data" must reload extensions.
+  - Phases, in order: (1) Electron upgrade, done on `chore/electron-45`; (2) a spike: the library with Min's windows, the network-filtering switch, footprint per extension; (3) core: load extensions into `persist:webcontent` only, an Add-ons page shared with userscripts, load unpacked and `.crx`; (4) Chrome Web Store install, signature check, permission review on install and when an update asks for more, updates; (5) toolbar buttons and popups, context-menu items, options pages; (6) the network-filtering switch and warning; (7) fill API gaps found by testing popular extensions.
+- Recheck on Electron 45 with the screen unlocked: a covered window's visible case (fps) and no flicker when switching back (section 10.4).
 - The remaining low-footprint items in section 10.4.
 - Ghostery `data:` redirect failures. A possible fix is serving stubs from a privileged custom protocol.
 - `.nvmrc` is stale (15.7.0).

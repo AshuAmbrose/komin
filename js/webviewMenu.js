@@ -1,5 +1,3 @@
-const clipboard = electron.clipboard
-
 const webviews = require('webviews.js')
 const browserUI = require('browserUI.js')
 const searchEngine = require('util/searchEngine.js')
@@ -220,7 +218,7 @@ const webviewMenu = {
           clipboardActions.push({
             label: l('copyEmailAddress'),
             click: function () {
-              clipboard.writeText(ematch[0])
+              ipc.invoke('clipboardWrite', { text: ematch[0] })
             }
           })
         }
@@ -228,7 +226,7 @@ const webviewMenu = {
         clipboardActions.push({
           label: l('copyLink'),
           click: function () {
-            clipboard.writeText(link || mediaURL)
+            ipc.invoke('clipboardWrite', { text: link || mediaURL })
           }
         })
       }

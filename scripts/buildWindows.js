@@ -22,9 +22,7 @@ async function afterPackageBuilt (packagePath) {
 
   let archSuffix
 
-  if (packagePath.includes('ia32')) {
-    archSuffix = '-ia32'
-  } else if (packagePath.includes('arm64')) {
+  if (packagePath.includes('arm64')) {
     archSuffix = '-arm64'
   } else {
     archSuffix = ''
@@ -97,9 +95,6 @@ if (targetArchName) {
     case 'x64':
       archesToBuild.push(Arch.x64)
       break
-    case 'ia32':
-      archesToBuild.push(Arch.ia32)
-      break
     case 'arm64':
       archesToBuild.push(Arch.arm64)
       break
@@ -112,7 +107,8 @@ if (targetArchName) {
   archesToBuild.push(Arch.x64)
 } else {
   // creating multiple packages simultaneously causes errors in electron-rebuild, so do one arch at a time instead
-  archesToBuild.push(Arch.x64, Arch.ia32, Arch.arm64)
+  // (no ia32: Electron stopped building 32-bit Windows in version 44)
+  archesToBuild.push(Arch.x64, Arch.arm64)
 }
 
 ;(async () => {
