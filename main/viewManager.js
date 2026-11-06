@@ -560,6 +560,10 @@ function getTabProcessGroups () {
   const inactivePids = new Set()
   // a process can be shared between tabs, so one that also serves a protected tab (or the browser UI) is never trimmed
   const protectedPids = new Set()
+  // any of Min's windows focused, popups and sign-in windows included
+  const minInUse = BaseWindow.getFocusedWindow() !== null
+  // the "trim background tabs while you use Min" setting (Settings > Performance); off, tabs are trimmed only while Min isn't in use
+  const trimWhileInUse = settings.get('trimBackgroundTabs') !== false
 
   windows.getAll().forEach(function (win) {
     protectedPids.add(getWindowWebContents(win).getOSProcessId())
@@ -578,7 +582,9 @@ function getTabProcessGroups () {
       // 2. Protect tabs playing audio, active media, or capturing screen/voice
       (typeof isTabActiveWithMedia === 'function' && isTabActiveWithMedia(view.webContents)) ||
       // 3. Tab must be inactive for at least INACTIVE_TAB_TRIM_DELAY
-      now - lastActive < INACTIVE_TAB_TRIM_DELAY
+      now - lastActive < INACTIVE_TAB_TRIM_DELAY ||
+      // 4. While Min is in use, only if the setting allows it
+      (minInUse && !trimWhileInUse)
     ) {
       pids.forEach(pid => protectedPids.add(pid))
     } else {
@@ -590,7 +596,6 @@ function getTabProcessGroups () {
   // panel or play sound; their background workers otherwise page back in on every page load
   if (typeof getExtensionProcesses === 'function') {
     const extensionProcesses = getExtensionProcesses()
-    const minInUse = windows.getAll().some(win => win.isFocused())
     extensionProcesses.busy.forEach(pid => protectedPids.add(pid))
     extensionProcesses.idle.forEach(pid => (minInUse ? protectedPids : inactivePids).add(pid))
   }

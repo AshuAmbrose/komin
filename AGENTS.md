@@ -2,7 +2,7 @@
 
 Context for AI coding agents (and humans) working on this repository. It records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
 
-This file describes the code as of `master` at `92ac8922` plus the `feat/extensions-core` branch (Chrome extensions, phases 3 to 7). When the code and this file disagree, the code wins. Fix this file in the same change.
+This file describes the code as of `master` at `4747522e` (Chrome extensions merged, PR #10) plus the uncommitted work on `perf/background-efficiency`. When the code and this file disagree, the code wins. Fix this file in the same change.
 
 ---
 
@@ -10,11 +10,11 @@ This file describes the code as of `master` at `92ac8922` plus the `feat/extensi
 
 **Read sections 0–2 always.** Then read only what your task touches: the repository map (7), the IPC catalogue (8) and the subsystem you're changing (10.x). Check the pitfalls (14) before testing or debugging.
 
-**Where things stand (2026-11-05):**
+**Where things stand (2026-11-07):**
 
-- `master` has the fork's core work: the permission manager, low-resource mode (trimming, per-tab memory priority, 15-minute hibernation), Ghostery ad blocking, userscripts (PR #8), and Electron 45.1 / Chromium 156 (PR #9). Upstream (`minbrowser/min`) made the same upgrade after us, in `5c7b7aca` (Electron 44) and `441e751e` (45.2.1); section 15 compares them.
-- `feat/extensions-core` (not committed yet) adds Chrome extensions, phases 3 to 7 of 7: install from `.crx` files, unpacked folders and the Chrome Web Store's own "Add to Chrome" button; a list in Settings; Min's tabs given to extensions; `onInstalled`/`onStartup`; automatic updates; toolbar buttons with popups and badges, extension menu items, options pages and keyboard shortcuts; and an extension that filters requests (uBlock Origin Lite) can take over ad blocking in normal tabs; the APIs popular extensions use that Electron and the library lack (screenshots, downloads, side panels, sign-in windows, speech…); idle extensions trimmed like background tabs (section 10.9). It also moves to Electron 45.2.2, and fixes a `master` bug: the ad-block list download could freeze the main process (pitfall 20).
-- **Next: the maintainer tests the extension work together** (all seven phases are done), then a PR. Open items are in section 15.
+- `master` has the fork's work so far: the permission manager, low-resource mode (trimming, per-tab memory priority, 15-minute hibernation), Ghostery ad blocking, userscripts (PR #8), Electron 45 / Chromium 156 (PR #9, now 45.2.2), and Chrome extensions, all seven phases (PR #10, section 10.9): `.crx` files, unpacked folders and the Chrome Web Store's "Add to Chrome"; updates; toolbar buttons, popups, menus, options pages and shortcuts; uBlock Origin Lite and the like taking over ad blocking in normal tabs; the APIs popular extensions use; idle extensions trimmed. Upstream (`minbrowser/min`) made the same Electron upgrade after us, in `5c7b7aca` (Electron 44) and `441e751e` (45.2.1); section 15 compares them.
+- `perf/background-efficiency` (not committed yet): Settings → Performance with two switches, trimming background tabs while Min is in use (on by default) and `--optimize-for-size` (now off by default: measured, it made JavaScript about a quarter slower and saved no measurable memory); the memory investigation's results (section 10.4, "Measured and not worth doing"); trimming of the audio, GPU and network processes noted as a potential issue; pitfall 40.
+- **Next: the maintainer tests the Performance settings**, then a PR. Open items are in section 15.
 
 **Working with the maintainer:**
 
@@ -141,8 +141,8 @@ Native views are drawn *above* the HTML UI, and HTML can never overlay them. Whe
    - `--version` exit
    - Squirrel install/uninstall (calls `registryInstaller`, skipped for dev apps)
    - userData path (gets a `-development` suffix in dev mode or for an unpackaged/dev-named app)
-   - `js-flags=--optimize-for-size`
    - `settings.initialize`
+   - `js-flags=--optimize-for-size`, only when the setting `optimizeJavaScriptForSize` is true (off by default; read once here, so changing it needs a restart)
    - language
    - `requestSingleInstanceLock`. A second instance forwards its argv to the first and quits. The lock is per profile folder.
 2. **`app.on('ready')`:** `registerBundleProtocol(session.defaultSession)`, then `createWindow()`. A separate `app.once('ready')` creates the places-service window.
@@ -423,6 +423,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
   - the window is focused;
   - the window is visible on a multi-monitor setup.
 - `getProtectedPids()` excludes media and capture tabs. Process names are `min`, or `Min-Dev` for dev apps. When running unpackaged (`npm start`), the processes are named `electron.exe`, so whole-app trimming matches nothing there; only inactive-tab trimming runs.
+- **Potential issue, not reported yet:** `getProtectedPids()` protects only the *tab* that plays media or captures, not the shared processes that tab depends on. In the packaged app with a tab playing (silent) audio, minimizing trimmed Chromium's audio service (104 → 1 MB working set), the GPU process (236 → 1 MB; it also draws picture-in-picture video) and the network service (62 → 0 MB; it carries call data), while the tab itself kept its 113 MB (2026-11-07). Paging that memory back in could cause a short audio dropout or video stutter in a call or music, at minimize and then every 90 s while Min is unfocused. Not heard or measured as a glitch. If it's reported: while any web contents is `isTabActiveWithMedia`, also add the pids of the GPU process and the audio, network and video-capture utility processes (`app.getAppMetrics()`: `type` `GPU`, and `Utility` with `name` "Audio Service", "Network Service", "Video Capture") to `getProtectedPids()`, and check by minimizing the packaged app with a tab playing media and reading those processes' working sets.
 - The `powerMonitor` suspend/resume listeners are added per window and removed on `closed`.
 
 **Inactive-tab trimming and memory priority** (`viewManager.js`). Every 60 s, and 30 s after a tab switch, `trimInactiveTabsNow` uses `getTabProcessGroups` to split tab processes into inactive and protected ones. Inactive means the tab hasn't been used for 30 s or more.
@@ -430,6 +431,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - Inactive processes are trimmed and given **low memory priority** (`trimMemory.exe --memory-priority low <pids>`). They're remembered in `lowMemoryPriorityPids`.
 - It includes their cross-site frame processes (ads, embeds), found with `getFramePids`, which uses `webContents.mainFrame.framesInSubtree` and each frame's `osProcessId`.
 - It never touches a process that also serves a protected tab (selected, media or capture, or used in the last 30 s) or the browser UI. Chromium can share one process between tabs.
+- **The setting `trimBackgroundTabs`** (Settings → Performance, on unless set to false): off, every tab counts as protected while any Min window is focused (`BaseWindow.getFocusedWindow()`, popups and sign-in windows included), so background tabs are trimmed only while Min isn't in use. Whole-app trimming and hibernation don't depend on it. The Settings page shows it on Windows only (`navigator.platform`), the only platform that trims. Measured (dev build, 2026-11-07, three test tabs of 100–200 MB, two runs): on and focused, they dropped to 2–19 MB within 100 s; off and focused, they kept their memory; off and minimized, 0–20 MB within 70 s. Going back to a trimmed tab with plenty of free RAM: redrawn in 15–25 ms, its 80 MB read back in about 20 ms. With RAM short, Windows may have reused the memory and it comes back from disk (not measured).
 - **Normal priority comes back** (`trimMemory.exe --no-trim --memory-priority normal <pids>`):
   - straight away when the tab is selected (`setView`);
   - when it starts playing media (`media-started-playing` in `main.js`);
@@ -465,12 +467,28 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - Background pages' memory is live state (JS heap, DOM, compiled code, per-process baseline), not caches.
 - Don't build a purge feature. Only hibernation (closing the process) releases memory in bulk. Tabs that must stay alive (chats, calls, media) keep roughly 100–160 MB each.
 
+**Measured and not worth doing** (dev build, Electron 45.2.2, 2026-11-07). Where Min's memory goes, and ideas that don't pay:
+
+- **Min's own code holds little.** With eight tabs open: the UI process was 82–88 MB private, but its JS heap only about 11 MB (DOM 255 elements, tab previews under 7 KB); the main process 111 MB private, of which JS heap about 15 MB plus 18 MB of external buffers (the ad-block engine). The rest is Electron and Chromium per process. All ~40 translations are loaded in both processes (`dist/localization.build.js`): a few MB each.
+- **The hibernation probe** (`isTabImmuneFromHibernation`) takes 2–5 ms and pulls about 3.5 MB back into a trimmed tab (once 29 MB on Wikipedia), re-trimmed within a minute: about 1 MB on average per tab that stays alive. Its media check is redundant (`isTabActiveWithMedia` already uses `_isMediaPlaying`).
+- **Efficiency mode (EcoQoS):** Chromium already gives background tabs idle priority and EcoQoS, and the visible tab and the UI too once Min is minimized. Still normal: main, GPU (above normal), network service, crashpad, and the history service window (a hidden window, so never backgrounded). Putting the GPU process on EcoQoS could slow picture-in-picture and calls.
+- **No spare renderer** (every renderer belongs to the UI, the history service or a tab) and **no back/forward cache** (a left page's process closes; Back reloads).
+- **The GPU process** grows with sites' content, not with hidden tabs: 138 → 145 MB from 1 to 9 simple tabs (197 MB with YouTube, GitHub and others open); minimizing and hibernating didn't change it.
+- **Node.js in a renderer** costs about 10 MB (a blank hidden window: 31 MB with `nodeIntegration`, 21 MB without). Removing it from the UI would mean rewriting the UI.
+- **The history service** (`placesService.html`, a hidden window, 32–34 MB) could run as a `SharedWorker` inside the UI process (Chromium keeps it there; it added 4.5 MB), but its IndexedDB belongs to the `file://` origin and a worker started by the UI is `min://app`: everyone's history and bookmarks would need migrating. A smaller option, not done: drop Node from that window (a preload passing the `places-connect` ports, `stemmer` bundled), about 10 MB, same database.
+- **Freezing background tabs** (Chromium's page lifecycle "frozen" state: no code runs, the page keeps its state and resumes instantly) works in Electron 45 through the DevTools protocol: `webContents.debugger.attach('1.3')`, then `sendCommand('Page.setWebLifecycleState', {state: 'frozen' | 'active'})`. Chrome freezes tabs by itself, but that logic lives in Chrome (its performance manager), not in the content layer Electron has. Measured with four background tabs, three 60 s periods each (hidden, frozen, resumed but still hidden), CPU per minute:
+  - a test page with timers, animation and a dedicated worker (Chromium doesn't throttle workers): 0.40 s hidden, 0.001 s frozen, 0.42 s resumed;
+  - once real sites have settled, Chromium's own throttling already leaves little: YouTube 0.011 s frozen vs 0.024 s resumed, Wikipedia 0.003 vs 0.002, Times of India 0.59 frozen vs 0.02 resumed (unexplained);
+  - memory pulled back after a trim: 0–1.2 MB frozen, 0.5 MB or less for settled pages that weren't frozen (up to 34 MB while pages were still loading).
+  
+  The test page's timers and worker stopped exactly while frozen and carried on after resuming, with no reload. Not built: little to gain for most pages, and a frozen page also stops legitimate background work (uploads, chats without notification permission, a web app syncing). Chrome decides when freezing is safe with checks Electron doesn't have (Web Locks, IndexedDB transactions and the like). A narrow use if wanted later: tabs that hibernation can't close only because of unsaved input or an `onbeforeunload` handler, frozen instead of left running.
+
 **Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. On Electron 45 the covered case still measures 0 fps; the visible case and the flicker check haven't been redone (the screen was locked during testing, which hides every window). Audio, calls and notifications continue.
 
 **Other:**
 
 - `backgroundThrottling: true` in the tab web preferences.
-- `js-flags=--optimize-for-size`.
+- `js-flags=--optimize-for-size`, the setting `optimizeJavaScriptForSize` (Settings → Performance, off unless true; it was always on before these measurements). Measured (dev build, 2026-11-07; four real sites open, two runs each with and without it): Speedometer 3.1 scored 14.1 and 14.3 with it, 19.0 and 18.7 without, so JavaScript runs about a quarter slower; a local test (creating objects, JSON, sorting, text with regular expressions, DOM) took 1,393–1,435 ms vs 940–943 ms; the four sites' private memory was 352–363 MB vs 350–360 MB and the UI's 84–86 vs 86–87 MB, so no measurable saving; hence off by default. Electron applies a `js-flags` switch added at run time to renderers only, not to the main process.
 - Preview capture runs only when the UI is focused, plus once on blur.
 
 **Not done yet** (candidates):
@@ -520,6 +538,7 @@ Rules for preload code:
   - **Extensions:** `extensionsFilterNetwork` (an extension that filters requests blocks ads in normal tabs instead of Min), `extensionsFilteringNetworkNow` (derived by main: that is happening now; for the UI)
   - **Features:** `readerData`, `userscriptsEnabled`, `userscriptsInPrivateTabs`, `lastBookmarksBackup`, `phishingWhitelist`, `proxy`
   - **PDF viewer:** `pdfDayTheme`, `pdfNightTheme`, `PDFInvertColors`
+  - **Performance** (Settings → Performance): `trimBackgroundTabs` (on unless false), `optimizeJavaScriptForSize` (off unless true; startup only, so the Settings page shows the restart notice)
   - **Updates and statistics:** `updateNotificationsEnabled`, `collectUsageStats`, `usageData`, `clientID`, `installTime`
 - **Autoplay:** `enableAutoplay` is off by default, so a tab loaded without a click (restored, reloaded, opened from a link) won't autoplay.
 
@@ -809,6 +828,7 @@ Apart from the unit tests for the userscript matcher and the extension package h
 37. `capturePage()` (and so `tabs.captureVisibleTab`) of a covered window fails ("Current display surface not available for capture"): covered windows draw nothing (section 10.4). Scripted tests keep the window on top.
 38. `setView` removes every child view of the window but the UI's before adding the tab's, so any other view of Min's (the side panel) has to be added back after it, and placed from the tab's bounds.
 39. Electron 45.2 added `chrome.storage.sync` (content scripts on 45.1 got the error `"sync" is not available in this instance of Chrome`), but `electron-chrome-extensions` 4.10 still sets `storage.sync = storage.local` in extensions' pages and workers: settings saved there by a popup were invisible to its content scripts. `extensionSupport.js` restores the real `sync`. Settings saved in `sync` before 45.2 stayed in `local`.
+40. In the UI window, `settings` isn't a global: the bundle's modules are scoped, so a test's `Runtime.evaluate("settings.set(...)")` throws, and a harness that ignores the result silently changes nothing (two earlier test scripts did this). `ipc`, `tabs` and `tasks` are globals. Change a setting with `ipc.send('settingChanged', key, value)` (main saves it, applies it and tells the other windows), or edit `settings.json` while Min is closed.
 
 ## 15. Open work
 
@@ -817,13 +837,14 @@ Apart from the unit tests for the userscript matcher and the extension package h
 - Document-start scriptlet injection, only if YouTube's late-injection limits become a problem. It could share the userscripts' sync request (section 10.8).
 - Userscripts: unsupported functions (`GM_cookie`, `GM_getTab`/`saveTab`/`getTabs`, `window.onurlchange`), and `GM_openInTab`'s `closed`/`onclose`. Add them if real scripts need them.
 - Upstream's Electron upgrade (PalmerAL, `5c7b7aca` to 44 and `441e751e` to 45.2.1, compared 2026-11-05): the same changes as ours (clipboard through main, safeStorage's async methods with a queue, no 32-bit builds). Taken from it: Electron 45.2.x (45.2.2 here, newer) and async file reads and writes in `keychainService.js`. Ours stays where it's stricter: the clipboard handlers only answer Min's own windows (upstream's answer any sender), and back/forward use `webContents.navigationHistory` (upstream still calls the deprecated methods). Upstream's clipboard channel is `clipboardWriteItem` (`ipc.send` with raw `ClipboardItem` data); ours is `clipboardWrite` (`{text, html, bookmark}`); keep ours when merging upstream. Rechecked on 45.2.2: every extension suite (core 58, toolbar 23, network 28, Web Store 30, APIs 35, footprint 4, startup 3, YouTube 3, all passing; YouTube's page scripts no longer get the sync error), a new 9-check run (the Electron version, `storage.sync` shared by a worker, a content script and a popup and kept after a restart, the password store with five saves at once, a delete and a restart), and both userscript suites (the same results as on 45.1, apart from timings and log noise). Min's workarounds for Electron's own behaviour were each retested on 45.2.2 with the workaround switched off, and all are still needed: Electron still sends neither `runtime.onInstalled` nor `onStartup`; `browser` is still a separate object without the library's additions (pitfall 17); rulesets marked `enabled` still load switched off (pitfall 26); and media in an offscreen document still crashes the browser (pitfall 32). The only one 45.2 made unnecessary was the extension library's own `storage.sync` → `local` stand-in, which `extensionSupport.js` now undoes (pitfall 39).
-- Chrome extension support, in seven phases. Done: (1) Electron 45.1 (PR #9, now 45.2.2); (2) a spike with real extensions (findings below and in section 10.9); (3) the core, (4) Chrome Web Store installs and updates, (5) toolbar buttons, popups, menus, options pages and shortcuts, (6) network-filtering extensions in place of Min's ad blocker, and (7) the APIs popular extensions use, a crash and a freeze fixed, idle extensions trimmed and restored tabs waiting for extensions, on `feat/extensions-core` (section 10.9). Decisions: aim for any Chrome Web Store extension, installed as in Chrome; heavy extensions are the user's choice (Min shows their memory and CPU, and warns); zero cost with none installed. Open:
+- Chrome extension support, in seven phases. Done: (1) Electron 45.1 (PR #9, now 45.2.2); (2) a spike with real extensions (findings below and in section 10.9); (3) the core, (4) Chrome Web Store installs and updates, (5) toolbar buttons, popups, menus, options pages and shortcuts, (6) network-filtering extensions in place of Min's ad blocker, and (7) the APIs popular extensions use, a crash and a freeze fixed, idle extensions trimmed and restored tabs waiting for extensions, merged in PR #10 (section 10.9). Decisions: aim for any Chrome Web Store extension, installed as in Chrome; heavy extensions are the user's choice (Min shows their memory and CPU, and warns); zero cost with none installed. Open:
   - Open after phase 4: the store shows its "Switch to Chrome" banner and pop-up to Min (installing works anyway). Hiding them would mean telling the store, on that site only, that Min is Google Chrome (`navigator.userAgentData` brands and the `Sec-CH-UA` headers); not decided. Requests from the main process (the ad-block lists, extension downloads) go through Min's own ad blocker in the default session; none of their URLs match today's rules, but a rule that did would block them.
   - Open after phase 5: with many extensions the toolbar has no overflow menu, pinning or hiding (Chrome's puzzle-piece menu); no page for changing extensions' shortcuts; MV2 `page_action` buttons aren't shown.
   - Open after phase 6: compare the footprint of Min's ad blocker with an extension's (uBO Lite's rules are matched natively, so it may well be cheaper); Min's PDF viewer in that mode (it would need the PDF fetched through main, like reader view).
   - Open after phase 7: the API gaps listed in section 10.9 (the camera and microphone in offscreen documents would need an Electron fix; `tabCapture`/`desktopCapture` could use Min's screen-share picker; Min's tab order for `tabs.move` and `index`; `storage.sync` in content scripts); test real extensions' side panels (Grammarly, DeepL, Bitwarden) by hand; let the privacy settings act on Min (password saving).
   - Spike notes on real extensions: Dark Reader darkens pages and its full popup works. Bitwarden's worker runs (including its WebAssembly SDK) and its popup shows the log-in screen; signing in wasn't tried. uBO Lite crashed at start because of the separate `browser` object (pitfall 17), now fixed.
 - Recheck on Electron 45 with the screen unlocked: a covered window's visible case (fps) and no flicker when switching back (section 10.4).
+- Potential issue, fix only if reported: whole-app trimming also trims the audio, GPU and network processes while a tab plays media or is in a call (section 10.4, "Potential issue"), which could cause audio dropouts or video stutter. The fix is a few lines in `getProtectedPids()`.
 - The remaining low-footprint items in section 10.4.
 - Ghostery `data:` redirect failures. A possible fix is serving stubs from a privileged custom protocol.
 - `.nvmrc` is stale (15.7.0).
