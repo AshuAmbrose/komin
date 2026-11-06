@@ -493,10 +493,11 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 
 **Not done yet** (candidates):
 
-- EcoQoS / Efficiency mode while unfocused, skipping call tabs (background tabs' CPU priority is already Idle, set by Chromium; low memory priority is done per tab);
-- removing the hibernation probe's wake-ups;
 - skipping the blur screenshot;
-- a persistent trimming helper instead of spawning `trimMemory.exe` every minute.
+- a persistent trimming helper instead of spawning `trimMemory.exe` every minute;
+- the history service's window without Node.js (about 10 MB, same database; see "Measured and not worth doing" above).
+
+Efficiency mode (EcoQoS) and the hibernation probe's wake-ups were candidates too; measured, neither pays (above).
 
 **Extensions' processes** (`getExtensionProcesses` in `extensions.js`, used by `getTabProcessGroups`): background workers report their process id when they start (`min-extension-lifecycle`), and extension pages are found among all web contents. While no Min window is focused, they're trimmed and get low memory priority at the 60 s pass, like inactive tabs; while Min is in use they're left alone (their workers would page back in on every page load). A process showing a popup or a side panel, or playing sound, is never touched. Measured with Dark Reader and Bitwarden: focused for two passes, 119 and 161–181 MB kept; minimized, 119 → 3 MB and 187 → about 10 MB at the next pass; both kept working.
 
