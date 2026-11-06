@@ -77,13 +77,16 @@ if (isDevelopmentMode || (isDevApp && !app.getPath('userData').toLowerCase().inc
 // upstream Min disabled this (disable-backgrounding-occluded-windows) to work around a focus flicker
 // (https://github.com/electron/electron/issues/17942), but that kept covered windows drawing at full speed
 
-/* Performance and resource optimizations for low-overhead background/gaming workloads */
-// Optimize V8 memory heap size and compact bytecode for reduced memory footprint
-app.commandLine.appendSwitch('js-flags', '--optimize-for-size')
-
 var userDataPath = app.getPath('userData')
 
 settings.initialize(userDataPath)
+
+/* Performance and resource optimizations for low-overhead background/gaming workloads */
+// V8 favors memory over speed: a setting, off unless turned on (read at startup only). Measured: JavaScript about a quarter
+// slower, no measurable memory saving (AGENTS.md, section 10.4)
+if (settings.get('optimizeJavaScriptForSize') === true) {
+  app.commandLine.appendSwitch('js-flags', '--optimize-for-size')
+}
 
 if (settings.get('userSelectedLanguage')) {
   app.commandLine.appendSwitch('lang', settings.get('userSelectedLanguage'))

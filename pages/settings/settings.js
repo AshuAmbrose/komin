@@ -680,6 +680,34 @@ usageStatisticsCheckbox.addEventListener('change', function (e) {
   settings.set('collectUsageStats', this.checked)
 })
 
+/* performance settings (trimming on unless turned off, the JavaScript option off unless turned on) */
+
+var trimBackgroundTabsCheckbox = document.getElementById('checkbox-trim-background-tabs')
+var optimizeJavaScriptCheckbox = document.getElementById('checkbox-optimize-javascript')
+
+// tabs are trimmed on Windows only
+if (navigator.platform.startsWith('Win')) {
+  document.getElementById('section-trim-background-tabs').hidden = false
+}
+
+settings.get('trimBackgroundTabs', function (value) {
+  trimBackgroundTabsCheckbox.checked = value !== false
+})
+
+trimBackgroundTabsCheckbox.addEventListener('change', function (e) {
+  settings.set('trimBackgroundTabs', this.checked)
+})
+
+settings.get('optimizeJavaScriptForSize', function (value) {
+  optimizeJavaScriptCheckbox.checked = value === true
+})
+
+// read once, when Min starts
+optimizeJavaScriptCheckbox.addEventListener('change', function (e) {
+  settings.set('optimizeJavaScriptForSize', this.checked)
+  showRestartRequiredBanner()
+})
+
 /* default search engine setting */
 
 var searchEngineDropdown = document.getElementById('default-search-engine')

@@ -266,6 +266,12 @@
     "settingsUserscriptsLocal": "Local file",
     "settingsUserscriptsRunsOn": "Runs on: %s", //%s is a list of websites
     "settingsUserscriptsLegacy": "Older Min script (no metadata block)",
+    "settingsPerformanceHeading": "Performance",
+    "settingsPerformanceExplanation": "Min keeps its memory and CPU use low, so your other programs have more room. Each option here trades some speed for less memory.",
+    "settingsTrimBackgroundTabsToggle": "Free up memory from background tabs while you use Min",
+    "settingsTrimBackgroundTabsExplanation": "Tabs you haven't looked at for 30 seconds give their memory back to Windows, which hands it to other programs first. Pro: more free memory for everything else. Con: when your computer runs short of memory, going back to one of those tabs can take a moment. Tabs playing sound or video, in a call or sharing your screen are left alone. With this off, background tabs give back memory only while Min isn't in use.",
+    "settingsOptimizeJavaScriptToggle": "Make websites' JavaScript use less memory",
+    "settingsOptimizeJavaScriptExplanation": "Tells the JavaScript engine to favor memory over speed. Pro: it may save some memory on some pages, although Min's tests on four popular sites found no difference. Con: JavaScript-heavy sites and web apps run about a quarter slower. Takes effect after Min restarts.",
     "settingsExtensionsHeading": "Extensions",
     "settingsExtensionsExplanation": "Chrome extensions add features to Min. Each one you turn on uses some memory and CPU, even while Min is in the background.",
     "settingsExtensionsInstallCrx": "Install from a .crx file…",
