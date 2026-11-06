@@ -2,7 +2,7 @@
 
 Context for AI coding agents (and humans) working on this repository. It records facts that are hard to recover from the source, decisions already made, and bugs that were expensive to find.
 
-This file describes the code as of `master` at `36f09628` plus the `chore/electron-45` branch (Electron 45.1). When the code and this file disagree, the code wins. Fix this file in the same change.
+This file describes the code as of `master` at `92ac8922` plus the `feat/extensions-core` branch (Chrome extensions, phases 3 to 7). When the code and this file disagree, the code wins. Fix this file in the same change.
 
 ---
 
@@ -10,11 +10,11 @@ This file describes the code as of `master` at `36f09628` plus the `chore/electr
 
 **Read sections 0–2 always.** Then read only what your task touches: the repository map (7), the IPC catalogue (8) and the subsystem you're changing (10.x). Check the pitfalls (14) before testing or debugging.
 
-**Where things stand (2026-11-01):**
+**Where things stand (2026-11-05):**
 
-- `master` has the fork's core work: the permission manager, low-resource mode (trimming, per-tab memory priority, 15-minute hibernation), Ghostery ad blocking, and userscripts (PR #8).
-- `chore/electron-45` upgrades Electron 43.4.1 → 45.1.0 (Chromium 156), with the fixes it needed (clipboard through main, async `safeStorage`, `navigationHistory`, no 32-bit builds). All checks passed: section 15 lists what is still unchecked.
-- **Next: Chrome extension support** (section 15 has the decisions and phase order). After that, the maintainer tests everything together.
+- `master` has the fork's core work: the permission manager, low-resource mode (trimming, per-tab memory priority, 15-minute hibernation), Ghostery ad blocking, userscripts (PR #8), and Electron 45.1 / Chromium 156 (PR #9). Upstream (`minbrowser/min`) made the same upgrade after us, in `5c7b7aca` (Electron 44) and `441e751e` (45.2.1); section 15 compares them.
+- `feat/extensions-core` (not committed yet) adds Chrome extensions, phases 3 to 7 of 7: install from `.crx` files, unpacked folders and the Chrome Web Store's own "Add to Chrome" button; a list in Settings; Min's tabs given to extensions; `onInstalled`/`onStartup`; automatic updates; toolbar buttons with popups and badges, extension menu items, options pages and keyboard shortcuts; and an extension that filters requests (uBlock Origin Lite) can take over ad blocking in normal tabs; the APIs popular extensions use that Electron and the library lack (screenshots, downloads, side panels, sign-in windows, speech…); idle extensions trimmed like background tabs (section 10.9). It also moves to Electron 45.2.2, and fixes a `master` bug: the ad-block list download could freeze the main process (pitfall 20).
+- **Next: the maintainer tests the extension work together** (all seven phases are done), then a PR. Open items are in section 15.
 
 **Working with the maintainer:**
 
@@ -39,6 +39,8 @@ This file describes the code as of `master` at `36f09628` plus the `chore/electr
    - `onHeadersReceived` and `onBeforeRedirect` in `main/download.js`
 
    Add logic to the existing handler, never a second `ses.webRequest.onX(...)`. That is why the ad blocker's CSP headers are applied from `download.js` (`applyFilteringCSPHeaders`).
+
+   While an extension filters normal tabs' requests, all four are removed from `persist:webcontent` (`applyExtensionNetworkFiltering`, section 10.9): any listener there turns off extensions' `webRequest` and `declarativeNetRequest`. A new job in these hooks needs a replacement for that mode too.
 6. **Inject ad-block scriptlets only through `injectCosmeticFiltersForSender` in `main/filtering.js`.** Never use Ghostery's `engine.onInjectCosmeticFilters` or `enableBlockingInSession`. Ghostery's injector runs each scriptlet as a separate top-level script. uBlock Origin helpers (`proxyApplyFn`, `safeSelf`, `class JSONPath`) then overwrite each other, and `Function.prototype.toString` recurses forever, which broke YouTube (empty search metadata, frozen Shorts). Our wrapper runs each scriptlet in its own function scope and passes one shared `scriptletGlobals` object. Keep both properties.
 7. **Never pass `userGesture: true` to `executeJavaScript` for code that runs in web pages.** It grants the page a user activation, which defeats the popup blocker and the autoplay policy.
 8. **Don't hand-roll ad blocking** (ad skippers, playback speed-ups, site-specific ad DOM hacks). The project deliberately reuses uBlock Origin / EasyList rules and Ghostery's engine. If something is broken, fix the integration or the lists.
@@ -67,8 +69,9 @@ This file describes the code as of `master` at `36f09628` plus the `chore/electr
 
 | Thing | Version / detail |
 |---|---|
-| Electron | 45.1.0 (`package.json` `electronVersion` and devDependency, pinned exactly), bundling Chromium 156 and Node 24 |
+| Electron | 45.2.2 (`package.json` `electronVersion` and devDependency, pinned exactly), bundling Chromium 156.0.8078.80 and Node 24.22.2. No lockfile is tracked: change both fields, then `npm install` (its postinstall flips the fuse on the new binary). |
 | Ad blocking | `@ghostery/adblocker-electron` 2.20.1 (with `@ghostery/adblocker`, `-content`, `-electron-preload`, `-extended-selectors` at the same version) |
+| Extensions | `electron-chrome-extensions` 4.10.0 (MIT, pinned exactly), required only once an extension is enabled (section 10.9) |
 | UI bundler | browserify 16 + `electron-renderify` |
 | Packaging | electron-builder 24, `electron-installer-windows` (Squirrel), archiver |
 | Lint | `standard` 14 (`npm test`), prettier for css/md/html/json (`npm run lint`) |
@@ -83,7 +86,7 @@ npm install                 # postinstall runs scripts/setupDevEnv.js (flips an 
 npm start                   # npm run build, then concurrently: scripts/watch.js + `electron . --development-mode`
 npm run build               # buildMain + buildBrowser + buildBrowserStyles + buildPreload
 npm test                    # lint only (standard)
-npm run test:unit           # unit tests (node:test, test/*.test.js); only the userscript matcher has them so far
+npm run test:unit           # unit tests (node:test, test/*.test.js): the userscript matcher and the extension package helpers
 npm run lint                # REWRITES files (prettier --write, standard --fix)
 node scripts/buildWindows.js --arch=x64   # package x64 only (run `npm run build` first)
 npm run buildWindows        # build + package x64 and arm64 (slow; Electron 44+ has no 32-bit Windows or ARM Linux builds)
@@ -113,6 +116,7 @@ Development details:
 | Main (1) | `main.build.js` (from `main/` + a few `js/util` files) | yes | windows, tab views, network hooks, files, menus, permissions |
 | Browser UI renderer (1 per window) | `index.html` + `dist/bundle.js` (from `js/`, entry `js/default.js`) + `dist/bundle.css` | yes (`nodeIntegration: true`, `contextIsolation: false`) | trusted; loaded as `min://app/index.html` |
 | Tab renderers (about 1 per site, site isolation) | website + `dist/preload.js` | no | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, `nodeIntegrationInSubFrames: true` (the preload also runs in iframes) |
+| Extension renderers (about 1 per running extension, only when some are enabled) | the extension's background worker and pages + `js/preload/extensionSupportEarly.js`, the library's preload, `js/preload/extensionSupport.js` | no | section 10.9 |
 | Places service (1 hidden `BrowserWindow`) | `js/places/placesService.html` | yes | history, bookmarks, full-text index (Dexie / IndexedDB) |
 | Translate service (hidden `BrowserWindow`, on demand) | `pages/translateService/` | – | Bergamot WASM translation |
 | Prompt windows | `pages/prompt/` via `main/prompt.js` | – | modal text-input dialogs |
@@ -155,10 +159,10 @@ Native views are drawn *above* the HTML UI, and HTML can never overlay them. Whe
 | Script | Output | Notes |
 |---|---|---|
 | `scripts/buildLocalization.js` | `dist/localization.build.js` | merges `localization/languages/*.json` (comments stripped) plus `localization/localizationHelpers.js` (defines `l()`). Called by `buildMain`. |
-| `scripts/buildMain.js` | `main.build.js` | concatenates in **this order**: `dist/localization.build.js`, `main/windowManagement.js`, `js/util/keyMap.js`, `main/menu.js`, `main/touchbar.js`, `main/registryConfig.js`, `js/util/settings/settingsMain.js`, `main/main.js`, `main/minInternalProtocol.js`, `main/filtering.js`, `main/viewManager.js`, `main/download.js`, `main/UASwitcher.js`, `main/permissionManager.js`, `main/prompt.js`, `main/remoteMenu.js`, `main/remoteActions.js`, `main/keychainService.js`, `js/util/proxy.js`, `main/themeMain.js`, `js/util/userscriptMatching.js`, `main/userscripts.js`, `main/userscriptAPI.js`, `main/userscriptInstall.js` |
+| `scripts/buildMain.js` | `main.build.js` | concatenates in **this order**: `dist/localization.build.js`, `main/windowManagement.js`, `js/util/keyMap.js`, `main/menu.js`, `main/touchbar.js`, `main/registryConfig.js`, `js/util/settings/settingsMain.js`, `main/main.js`, `main/minInternalProtocol.js`, `main/filtering.js`, `main/viewManager.js`, `main/download.js`, `main/UASwitcher.js`, `main/permissionManager.js`, `main/prompt.js`, `main/remoteMenu.js`, `main/remoteActions.js`, `main/keychainService.js`, `js/util/proxy.js`, `main/themeMain.js`, `js/util/userscriptMatching.js`, `main/userscripts.js`, `main/userscriptAPI.js`, `main/userscriptInstall.js`, `js/util/extensionPackages.js`, `main/extensions.js`, `main/extensionAPIs.js` |
 | `scripts/buildBrowser.js` | `dist/build.js` then `dist/bundle.js` | browserify of `dist/localization.build.js` + `js/default.js`, with `paths: [root, js/]` and `node: true`; `chokidar` and `write-file-atomic` excluded |
 | `scripts/buildBrowserStyles.js` | `dist/bundle.css` | concatenates `css/*.css` (fixed list) + dragula css |
-| `scripts/buildPreload.js` | `dist/preload.js` | concatenates `js/preload/default.js`, `textExtractor.js`, `readerDetector.js`, `siteUnbreak.js`, `mediaTracker.js`, `userscripts.js`, `js/util/settings/settingsPreload.js`, `js/preload/passwordFill.js`, `js/preload/translate.js` |
+| `scripts/buildPreload.js` | `dist/preload.js` | concatenates `js/preload/default.js`, `textExtractor.js`, `readerDetector.js`, `siteUnbreak.js`, `mediaTracker.js`, `userscripts.js`, `webStore.js`, `js/util/settings/settingsPreload.js`, `js/preload/passwordFill.js`, `js/preload/translate.js` |
 
 Consequences of the concatenation:
 
@@ -170,7 +174,7 @@ Consequences of the concatenation:
 
 - **`scripts/createPackage.js`** runs electron-builder with a `dir` target into `dist/app/win-unpacked`.
   - `asar: false`, `npmRebuild: false`.
-  - `files` excludes `main/` (it's bundled), `scripts/`, `localization/`, `*.md`, maps, `icons/source` and `dist/app`.
+  - `files` excludes `main/` (it's bundled), `scripts/`, `localization/`, `*.md`, maps, `icons/source` and `dist/app`. `js/preload/extensionSupport.js` is loaded from its own file (it isn't in `dist/preload.js`), so `js/` must stay packaged.
   - An `afterPack` hook flips the `GrantFileProtocolExtraPrivileges=false` fuse on the packaged exe.
 - **`scripts/buildWindows.js`** produces:
   - `dist/app/Min-v<version>-windows<suffix>.zip`
@@ -187,17 +191,19 @@ Consequences of the concatenation:
 | `windowManagement.js` | global `windows`: `addWindow`, `removeWindow`, `getCurrent` (last focused), `getAll`, `getState(win)` (**throws** if the window was removed), `windowFromContents`. Quits when the last window closes (except macOS). |
 | `main.js` | startup, `createWindow`/`createWindowWithBounds`, `sendIPCToWindow`, `getWindowWebContents`, `handleCommandLineArguments`, window events. Also memory trimming of the whole app (`trimMemoryNow`, `trimMemoryIfInactive`, `startBackgroundTrimming`), the media guards `isTabActiveWithMedia` and `getProtectedPids`, `hasActiveDownloads`, the tab-state relay (`tab-state-change`), and the places/translation channel setup. |
 | `viewManager.js` | tab views: globals `viewMap`, `viewStateMap`, `tabLastActivity`. Functions `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `getView`, `getTabIDFromWebContents`, `getWindowFromViewContents`. `callViewMethod` lets the UI call any `webContents` method. It forwards page events (`view-event`) and page IPC (`view-ipc`) to the UI. Also tab memory trimming and memory priority (`getTabProcessGroups`, `trimInactiveTabsNow`, `scheduleInactiveTabTrim`, `restoreTabMemoryPriority`, `lowMemoryPriorityPids`) and hibernation (`isTabImmuneFromHibernation`, `checkSmartHibernation`). |
-| `filtering.js` | network blocking + Ghostery engine + cosmetic filters + scriptlets + tracking-parameter removal (section 10.2) |
-| `download.js` | `will-download` handling (`downloadHandler`, `currrentDownloadItems`; the triple `r` is an upstream typo, keep it). Also `onHeadersReceived` (PDF to viewer, userscript install page for `.user.js` responses, file-view detection, CORS for `min://` UI/reader/PDF pages, ad-block CSP) and `onBeforeRedirect` |
+| `filtering.js` | network blocking + Ghostery engine + cosmetic filters + scriptlets + tracking-parameter removal (section 10.2). In normal tabs it stands down while an extension filters requests (`filterPopups(url, ses)` and cosmetic filters check `isExtensionNetworkFilteringOn`) |
+| `download.js` | `will-download` handling (`downloadHandler`, `currrentDownloadItems`; the triple `r` is an upstream typo, keep it). Also `onHeadersReceived` (PDF to viewer, userscript install page for `.user.js` responses, file-view detection, CORS for `min://` UI/reader/PDF pages, ad-block CSP) and `onBeforeRedirect`. `internal-page-fetch`: reader view's page fetched by main when that hook isn't there (section 10.9) |
 | `UASwitcher.js` | strips `Min`/`Electron` from the user agent; `customUserAgent` setting; Firefox UA and no `Sec-CH-UA*` headers for `accounts.google.com` (Google sign-in) |
 | `permissionManager.js` | permission request/check/display-media handlers, prompts, persistence (section 10.3) |
 | `minInternalProtocol.js` | `min://` scheme (privileged: standard, secure, supportFetchAPI). `registerBundleProtocol(ses)` serves only host `app` from the app directory and rejects path traversal |
 | `menu.js`, `touchbar.js` | app menu (sends commands to the UI through `sendIPCToWindow`), dock menu, macOS Touch Bar |
 | `remoteActions.js`, `remoteMenu.js`, `prompt.js` | `ipc.handle` wrappers for main-only APIs (dialogs, window controls, file drag, clear storage), native context menus, modal prompt windows |
-| `keychainService.js` | built-in password store: `<userData>/passwordStore`, encrypted with `safeStorage`'s async methods (the sync ones are deprecated in 45 and removed in 46; files written with them still decrypt). Operations are queued so concurrent saves don't overwrite each other. |
+| `keychainService.js` | built-in password store: `<userData>/passwordStore`, encrypted with `safeStorage`'s async methods (the sync ones are deprecated in 45 and removed in 46; files written with them still decrypt), with async file reads and writes. Operations are queued so concurrent saves don't overwrite each other. |
 | `registryConfig.js` | Windows default-browser registry keys (on Squirrel install, update and uninstall) |
 | `themeMain.js` | `darkMode` setting to `nativeTheme.themeSource`, `darkThemeIsActive` |
 | `userscripts.js`, `userscriptAPI.js`, `userscriptInstall.js` | userscripts (section 10.8): loading, matching each frame, saved values and menu commands; the Greasemonkey functions that need main (`GM_xmlhttpRequest`, `GM_download`, `GM_openInTab`, `GM_setClipboard`, `GM_notification`, resources); installing, `@require`/`@resource` downloads, updates, and the requests from the install page and Settings |
+| `extensions.js` | Chrome extensions (section 10.9): `extensions.json`, starting `electron-chrome-extensions`, loading, `.crx` and unpacked installs with the permission review (`readExtensionCrx`, `installCheckedExtension`), Min's tabs for the library (`extensionsTabCreated`/`Shown`/`Destroyed`, `openTabForExtension`), lifecycle events, Settings requests, `clearTabStorageKeepingExtensions`, the Chrome Web Store page's API (`extensions-webstore`), updates (`checkExtensionUpdates`, `scheduleExtensionUpdates`), toolbar state and clicks (`getExtensionToolbar`, `scheduleExtensionToolbarUpdate`), the button menu, page menu items (`getExtensionContextMenuItems`), options pages, keyboard commands; extensions' processes for low-resource mode (`getExtensionProcesses`); restored tabs waiting for extensions at startup (`whenExtensionsLoadedFor`) |
+| `extensionAPIs.js` | the extension APIs Min adds (section 10.9): `tabs.captureVisibleTab`/`detectLanguage`/`discard`, `downloads`, `privacy`, `identity`, side panels (`openExtensionSidePanel`, placed by `extensionsViewBoundsChanged`), `browsingData`, `search`, `tts`; handlers on the library's router (`registerExtensionAPIs`) |
 
 ### `js/` (browser UI renderer)
 
@@ -206,12 +212,12 @@ Consequences of the concatenation:
 | `default.js` | entry point (see startup) |
 | `tabState.js`, `tabState/` | data model: global `tasks` (`TaskList`), global `tabs` (the selected task's `TabList`) |
 | `browserUI.js` | `addTab`, `closeTab`, `destroyTab`, `switchToTab`, `addTask`, `closeTask`, `switchToTask`, `setWindowTitle`. Each keeps the model, the tab bar DOM and the views in sync. |
-| `webviews.js` | the UI's interface to tab views: `add`, `setSelected`, `update` (load URL), `destroy`, `bindEvent`, `bindIPC`, `callAsync`, `requestPlaceholder`, `hidePlaceholder`, `adjustMargin`, `focus`, `hasViewForTab`, `selectedId`. Also the `hibernateTab` handler, the error page on `did-fail-load`, and preview capture. |
+| `webviews.js` | the UI's interface to tab views: `add`, `setSelected`, `update` (load URL), `destroy`, `bindEvent`, `bindIPC`, `callAsync`, `requestPlaceholder`, `hidePlaceholder`, `adjustMargin`, `focus`, `hasViewForTab`, `selectedId`. Also the `hibernateTab` handler, the error page on `did-fail-load`, and preview capture. `resize` emits the UI-only `view-resized` event. |
 | `navbar/` | `tabBar.js`, `tabEditor.js` (address bar), `navigationButtons.js`, `progressBar.js`, `tabColor.js`, `tabActivity.js`, `contentBlockingToggle.js` (per-site exception), `permissionRequests.js` (fork: permission bar and tab icons), `bookmarkStar.js`, `tabContextMenu.js`, `menuButton.js`, `addTabButton.js` |
 | `searchbar/` | suggestion plugins: `searchbarPlugins.register(name, {index, trigger, showResults})`, `addResult(name, {title, url, icon, descriptionBlock, ...})`, `reset(name)`, `getContainer(name)`. Plugins are required and initialized in `js/default.js`. |
 | `places/` | `places.js` (UI side, `MessageChannel` to the places service), `placesService.js`, `placesSearch.js`, `fullTextSearch.js` (tokenize, stem, `searchIndex` lookup), `tagIndex.js` |
 | `taskOverlay/` | task overview screen |
-| `keybindings.js`, `defaultKeybindings.js` | `keybindings.defineShortcut(nameOrKeys, fn, options)`. Names map to keys in `js/util/keyMap.js` (for example `addTab: 'mod+t'`); raw keys use `{ keys: 'mod+shift+y' }`. Users override keys with the `keyMap` setting. |
+| `keybindings.js`, `defaultKeybindings.js` | `keybindings.defineShortcut(nameOrKeys, fn, options)`. Names map to keys in `js/util/keyMap.js` (for example `addTab: 'mod+t'`); raw keys use `{ keys: 'mod+shift+y' }`. Users override keys with the `keyMap` setting. There's no way to remove a shortcut. `hasShortcut(combo)` says whether Min already uses some keys (`mod` counts as `ctrl`, or Command on a Mac). |
 | `sessionRestore.js` | saves `<userData>/sessionRestore.json` every 30 s (private tabs excluded); `restore()`, `restoreFromFile()`, `syncWithWindow()` |
 | `windowSync.js` | multi-window state sync through main (`tab-state-change`, then `tab-state-change-receive`) |
 | `webviewMenu.js` | page context menu (asks the preload for `getContextMenuData`, then `contextMenuData`) |
@@ -219,15 +225,17 @@ Consequences of the concatenation:
 | `passwordManager/` | Bitwarden / 1Password (CLI in `<userData>/tools`), built-in keychain, capture bar, viewer |
 | `downloadManager.js` | download bar (state in memory only) |
 | `userscripts.js` | the UI's list of userscripts (no code), for the `!run` bang and `@run-at context-menu` scripts in the page menu; scripts' `GM_registerMenuCommand` commands for the page menu (`getMenuCommands`); opens and closes tabs for `GM_openInTab`; "show script directory" (section 10.8) |
+| `extensions.js` | extensions' toolbar buttons in `#extension-actions` (after the new-tab button) and their keyboard shortcuts; opens, switches to and closes tabs when an extension asks (`extensions-open-tab`, `-select-tab`, `-close-tab`); a side panel's room and title bar (`#extension-side-panel-header`); `chrome.search` and `chrome.tts` (speech with `speechSynthesis`) for extensions (section 10.9) |
 | `statistics.js` | anonymous daily usage stats to `https://services.minbrowser.org/stats/v1/collect` unless `collectUsageStats === false` |
-| `util/` | `urlParser.js` (`parse`: adds `https://`, HTTPS upgrade list, search fallback, `min://name` expansion; `isInternalURL`, `getDomain`), `settings/settings.js` (UI settings API), `keyMap.js`, `searchEngine.js`, `database.js` (Dexie `browsingData2`), `theme.js`, `process.js`, `userscriptMatching.js` (userscript metadata, URL matching, `@connect` and update permission checks; also concatenated into `main.build.js` and unit-tested), `userscriptPages.js` (requests from the install page and the Settings list to main) |
+| `util/` | `urlParser.js` (`parse`: adds `https://`, HTTPS upgrade list, search fallback, `min://name` expansion; `isInternalURL`, `getDomain`), `settings/settings.js` (UI settings API), `keyMap.js`, `searchEngine.js`, `database.js` (Dexie `browsingData2`), `theme.js`, `process.js`, `userscriptMatching.js` (userscript metadata, URL matching, `@connect` and update permission checks; also concatenated into `main.build.js` and unit-tested), `userscriptPages.js` (requests from the install page and the Settings list to main), `extensionPackages.js` (CRX3 parsing and signature check, zip reading, manifest text, permission descriptions; concatenated into `main.build.js` and unit-tested), `extensionPages.js` (requests from Settings' extension list to main) |
 
 ### Other folders
 
 - `js/preload/` runs in pages (section 10.5).
-- `pages/` holds internal pages served at `min://app/pages/...`: `settings` (includes the fork's site-settings UI and the userscript list), `userscriptInstall` (fork), `error`, `newtab`, `pdfViewer`, `translateService`, `sessionRestoreError`, `prompt`, `phishing`.
-- `reader/` is reader view; it uses Mozilla Readability from `ext/readability-master`.
+- `pages/` holds internal pages served at `min://app/pages/...`: `settings` (includes the fork's site-settings UI, the userscript list and the Extensions section), `userscriptInstall` (fork), `error`, `newtab`, `pdfViewer`, `translateService`, `sessionRestoreError`, `prompt`, `phishing`.
+- `reader/` is reader view; it uses Mozilla Readability from `ext/readability-master`. When its own `fetch` of the article fails (no cross-origin exception while an extension filters requests), it asks main (`fetchThroughMin`).
 - `ext/` holds:
+  - `minNetworkHelper` (a built-in extension with no code, loaded only while an extension filters normal tabs' requests; Min sets its rules: section 10.9)
   - `abp-filter-parser-modified` (Min's original filter parser)
   - `filterLists` (`minFilters.txt`; `easylist+easyprivacy-noelementhiding.txt`, the offline fallback)
   - `publicSuffixes`
@@ -249,14 +257,15 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 |---|---|
 | Views (`viewManager.js`) | `createView`, `destroyView`, `destroyAllViews`, `setView`, `setBounds`, `focusView`, `hideCurrentView`, `loadURLInView`, `callViewMethod`, `getCapture`, `saveViewCapture`, `getNavigationHistory` (handle) |
 | Window and app (`main.js`) | `set-window-title`, `focusMainWebContents`, `showSecondaryMenu`, `quit`, `handoffUpdate`, `tab-state-change`, `request-tab-state`, `return-tab-state` (once), `places-connect`, `page-translation-session-create` |
-| `remoteActions.js` (handle) | `minimize`, `maximize`, `unmaximize`, `close`, `setFullScreen`, `showOpenDialog`, `showSaveDialog`, `showItemInFolder`, `startFileDrag`, `clearStorageData`, `addWordToSpellCheckerDictionary`, `showFocusModeDialog2`, `clipboardReadText`, `clipboardWrite` (`{text, html, bookmark}`; UI only: renderers can't use Electron's `clipboard` since Electron 44, and the main-process API is async). Also `newWindow` (on) |
-| Filtering | `inject-cosmetic-filters` (`filtering.js`, sent by the preload) |
+| `remoteActions.js` (handle) | `minimize`, `maximize`, `unmaximize`, `close`, `setFullScreen`, `showOpenDialog`, `showSaveDialog`, `showItemInFolder`, `startFileDrag`, `clearStorageData` (keeps installed extensions' data), `addWordToSpellCheckerDictionary`, `showFocusModeDialog2`, `clipboardReadText`, `clipboardWrite` (`{text, html, bookmark}`; UI only: renderers can't use Electron's `clipboard` since Electron 44, and the main-process API is async). Also `newWindow` (on) |
+| Filtering | `inject-cosmetic-filters` (`filtering.js`, sent by the preload); `internal-page-fetch` (handle, `download.js`; from reader view, relayed by `js/preload/default.js`) |
 | Permissions (`permissionManager.js`) | `permissionGranted`, `permissionDenied` (from the UI), `media-access-status` (from the preload) |
 | Downloads | `cancelDownload` (`download.js`) |
 | Settings | `settingChanged` (`settingsMain.js`) |
 | Userscripts (`userscripts*.js`) | from the preload: `userscripts-get` (**sync**), `userscripts-set-values`, `userscripts-menu-command-add`/`-remove`, `userscripts-xhr`, `userscripts-xhr-abort`, `userscripts-download`, `userscripts-open-tab` (handle), `userscripts-close-tab`, `userscripts-set-clipboard`, `userscripts-notification`, `userscripts-resource` (**sync**), `userscripts-install-prompt` (`file:` only), `userscripts-page` (handle; the install page and Settings only). From the UI: `userscripts-list`, `userscripts-run`, `userscripts-menu-commands`, `userscripts-menu-command-run` (handle), `userscripts-tab-opened` |
+| Extensions (`extensions.js`) | `extensions-page` (handle; from the top frame of `min://app/pages/settings/` only, relayed by the userscripts preload), `extensions-webstore` (handle; from the top frame of a `https://chromewebstore.google.com` tab only, sent by `webStore.js`), `extensions-tab-opened` (from the UI), `min-extension-lifecycle` (handle on an extension worker's `ServiceWorkerMain.ipc`, from `extensionSupport.js`). From the UI's toolbar: `extensions-toolbar-get` (handle), `extensions-toolbar-click` (handle; `{id, anchorRect}`), `extensions-toolbar-menu` (`{id, x, y}`), `extensions-command` (`{extensionId, name}`), `extensions-side-panel-close`, `extensions-tts-voices`, `extensions-tts-event` (`extensionAPIs.js`). Extensions' own calls to the APIs Min adds go through the library's `crx-msg` (section 10.9) |
 | Passwords (`keychainService.js`, handle) | `credentialStoreGetCredentials`, `credentialStoreSetPassword`, `credentialStoreSetPasswordBulk`, `credentialStoreDeletePassword` |
-| Menus and prompts | `open-context-menu` (`remoteMenu.js`); `prompt` (sync), `open-prompt`, `show-prompt`, `close-prompt` (`prompt.js`) |
+| Menus and prompts | `open-context-menu` (`remoteMenu.js`; `extensionsTabId` in its data adds that tab's extension items); `prompt` (sync), `open-prompt`, `show-prompt`, `close-prompt` (`prompt.js`) |
 
 ### Main process to UI (`sendIPCToWindow(win, channel, data)`)
 
@@ -265,7 +274,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 | Views | `view-event` (page events, from `viewManager.js`), `view-ipc` (page IPC forwarded), `async-call-result`, `captureData` |
 | App menu commands | `addTab`, `addPrivateTab`, `addTask`, `goBack`, `goForward`, `zoomIn`, `zoomOut`, `zoomReset`, `print`, `findInPage`, `inspectPage`, `showHistory`, `showBookmarks`, `toggleTaskOverlay`, `saveCurrentPage`, `openEditor`, `enterFocusMode`, `exitFocusMode` |
 | Window state | `focus`, `blur`, `windowFocus`, `minimize`, `maximize`, `unmaximize`, `enter-full-screen`, `leave-full-screen`, `enter-html-full-screen`, `leave-html-full-screen`, `before-input-event` |
-| Features | `updatePermissions` (fork), `hibernateTab` (fork), `userscripts-changed`, `userscripts-open-tab`, `userscripts-close-tab` (fork), `download-info`, `openPDF`, `set-file-view`, `tab-state-change-receive`, `read-tab-state` |
+| Features | `updatePermissions` (fork), `hibernateTab` (fork), `userscripts-changed`, `userscripts-open-tab`, `userscripts-close-tab`, `extensions-open-tab`, `extensions-select-tab`, `extensions-close-tab`, `extensions-toolbar` (fork; and `extensions-webstore-event` straight to store tabs), `extensions-side-panel` (`{extensionId: null}` when closed), `extensions-tts`, `extensions-search`, `download-info`, `openPDF`, `set-file-view`, `tab-state-change-receive`, `read-tab-state` |
 
 ### From the preload (`ipcRenderer.send` in `js/preload/*`)
 
@@ -320,7 +329,7 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 **Engine lifecycle:**
 
 1. `initFilterList` runs when blocking is turned on (including at startup). It deletes the legacy `adblocker-engine.bin`.
-2. `loadCachedAdblockerEngine` reads `<userData>/adblocker-engine-v2.bin`, about 17 ms. If that fails, `downloadAdblockerEngine` runs `ElectronBlocker.fromLists(fetch, ADBLOCKER_LISTS)` and writes the cache.
+2. `loadCachedAdblockerEngine` reads `<userData>/adblocker-engine-v2.bin`, about 17 ms. If that fails, `downloadAdblockerEngine` runs `ElectronBlocker.fromLists(fetchAdblockerList, ADBLOCKER_LISTS)` and writes the cache. `fetchAdblockerList` uses Electron's `net.fetch`, never Node's `fetch` (pitfall 20).
 3. If that fails too (offline), `loadBundledAdblockerEngine` parses `ext/filterLists/easylist+easyprivacy-noelementhiding.txt` and a retry is scheduled in 1 hour.
 4. `scheduleAdblockerUpdate` refreshes the engine when the cache is older than `ADBLOCKER_ENGINE_MAX_AGE` (2 days). While blocking is off it doesn't download; it checks again hourly.
 5. Building from lists takes about 1.2 s of main-thread time plus a ~6 MB download. The engine holds about 15 MB.
@@ -356,6 +365,8 @@ Channels are plain strings. To find both ends of a channel, search for its name.
   - On a freshly loaded or restored YouTube tab, the first ad can slip through (accepted).
   - In-app video clicks are normally ad-free, but sometimes stall on a spinner for about an ad's length.
   - A fix would be document-start injection from the preload (sync IPC + `contextBridge.executeInMainWorld`). It hasn't been done because it's new code; propose it only if needed.
+
+**Normal tabs and extensions.** While an extension that filters requests is in charge of normal tabs (section 10.9), all of the above (requests, cosmetic filters, scriptlets, popups, the shield button) only applies in private tabs.
 
 **YouTube** has no exemptions. Network rules, CSP, CSS and scriptlets all apply. The old hand-rolled mute/10× ad skipper was removed on purpose.
 
@@ -469,16 +480,19 @@ Channels are plain strings. To find both ends of a channel, search for its name.
 - skipping the blur screenshot;
 - a persistent trimming helper instead of spawning `trimMemory.exe` every minute.
 
+**Extensions' processes** (`getExtensionProcesses` in `extensions.js`, used by `getTabProcessGroups`): background workers report their process id when they start (`min-extension-lifecycle`), and extension pages are found among all web contents. While no Min window is focused, they're trimmed and get low memory priority at the 60 s pass, like inactive tabs; while Min is in use they're left alone (their workers would page back in on every page load). A process showing a popup or a side panel, or playing sound, is never touched. Measured with Dark Reader and Bitwarden: focused for two passes, 119 and 161–181 MB kept; minimized, 119 → 3 MB and 187 → about 10 MB at the next pass; both kept working.
+
 ### 10.5 Preload scripts (`dist/preload.js`)
 
 | File | Role |
 |---|---|
-| `default.js` | `inject-cosmetic-filters`; marks unsaved user input for hibernation (`data-min-unsaved-input`); forwards wheel/swipe (`wheel-event`) and scroll position; context-menu helpers and picture-in-picture; relays `postMessage` from `min://` pages (`showCredentialList`, `showUserscriptDirectory`, `downloadFile`) |
+| `default.js` | `inject-cosmetic-filters`; marks unsaved user input for hibernation (`data-min-unsaved-input`); forwards wheel/swipe (`wheel-event`) and scroll position; context-menu helpers and picture-in-picture; relays `postMessage` from `min://` pages (`showCredentialList`, `showUserscriptDirectory`, `downloadFile`, and `internalPageFetch` for reader view) |
 | `textExtractor.js` | page text (300k character cap) → `pageData`, sent on load and after `pushState`/`replaceState` (it hooks these in the main world) |
 | `readerDetector.js` | `canReader` heuristic |
-| `siteUnbreak.js` | main-world fixes run with `webFrame.executeJavaScript(scriptsToRun.join(';'))`: `window.close`, google.com/accounts/drive/news/calendar/meet, YouTube homepage title, WebSocket counter |
+| `siteUnbreak.js` | main-world fixes run with `webFrame.executeJavaScript(scriptsToRun.join(';'))`: `window.close`, google.com/accounts/drive/news/calendar/meet, YouTube homepage title, WebSocket counter. Its stand-in `window.chrome` for `*.google.com` skips `chromewebstore.google.com`, which needs the real one (pitfall 21). |
 | `mediaTracker.js` | capture tracking (see permissions) |
-| `userscripts.js` | asks main for this frame's userscripts at document start and runs them at their `@run-at` time, with their Greasemonkey functions; notices local `.user.js` files; relays the install page's and Settings' requests (section 10.8) |
+| `userscripts.js` | asks main for this frame's userscripts at document start and runs them at their `@run-at` time, with their Greasemonkey functions; notices local `.user.js` files; relays the install page's and Settings' requests (section 10.8), and Settings' extension requests (`extensions-page`, section 10.9) |
+| `webStore.js` | on `https://chromewebstore.google.com` only (top frame): adds `chrome.webstorePrivate` and `chrome.management` for the store's "Add to Chrome" button (section 10.9) |
 | `settingsPreload.js` | `getSettingsData`/`setSetting` bridge for `min://` origins only |
 | `passwordFill.js` | login form detection and autofill |
 | `translate.js` | page translation via a `MessagePort` (`page-translation-session-create`) |
@@ -488,6 +502,8 @@ Rules for preload code:
 - The preload is sandboxed. Only the limited `require('electron')` API is available; don't require npm packages.
 - It runs in iframes too (`nodeIntegrationInSubFrames`). Gate page-wide work on `window === window.top`.
 - Main-world injection (`webFrame.executeJavaScript`) is visible to the page and can be altered by it. Don't rely on it for security.
+
+`js/preload/extensionSupportEarly.js` and `js/preload/extensionSupport.js` aren't part of `dist/preload.js`: they're session preloads for extensions, registered only once one is enabled (section 10.9).
 
 ### 10.6 Settings
 
@@ -501,6 +517,7 @@ Rules for preload code:
   - **Startup and tabs:** `startupTabOption`, `newWindowOption`, `openTabsInForeground`, `enableAutoplay`, `restartNow`
   - **Search and input:** `searchEngine`, `customBangs`, `keyMap`, `userSelectedLanguage`
   - **Passwords:** `passwordManager`, `passwordsNeverSaveDomains`, `1passwordDeviceID`
+  - **Extensions:** `extensionsFilterNetwork` (an extension that filters requests blocks ads in normal tabs instead of Min), `extensionsFilteringNetworkNow` (derived by main: that is happening now; for the UI)
   - **Features:** `readerData`, `userscriptsEnabled`, `userscriptsInPrivateTabs`, `lastBookmarksBackup`, `phishingWhitelist`, `proxy`
   - **PDF viewer:** `pdfDayTheme`, `pdfNightTheme`, `PDFInvertColors`
   - **Updates and statistics:** `updateNotificationsEnabled`, `collectUsageStats`, `usageData`, `clientID`, `installTime`
@@ -580,6 +597,127 @@ Not supported: `GM_cookie`, `GM_webRequest`, `GM_getTab`/`saveTab`/`getTabs`, `w
 
 **Measured** (dev build, scripted with CDP): run-at order, iframes and `@noframes`, `@exclude`, strict CSP + Trusted Types, legacy scripts, manual runs, live reload, private tabs, switching off; every function in the table above, including `@connect` refusals and values reaching other tabs; installing from a link and from a local file, automatic and approved updates, edited scripts, disable and remove. Real scripts installed from GitHub through the install page: Return YouTube Dislike (shows the dislike count on YouTube), and Mottie's GitHub Code Show Whitespace, GitHub Toggle Expanders and GitHub Image Preview (their `@require` files from greasyfork.org and greasemonkey.github.io download fine).
 
+### 10.9 Extensions (`main/extensions.js`, `js/util/extensionPackages.js`, `js/preload/extensionSupport.js`, `js/preload/webStore.js`, `js/extensions.js`)
+
+Chrome extensions (MV3 and MV2) use Electron's extension support plus `electron-chrome-extensions` 4.10.0, which adds the APIs Electron lacks (tabs, windows, action and popups, contextMenus, commands, notifications, cookies, webNavigation…). All seven phases are done (section 15): `.crx` files, unpacked folders, the Chrome Web Store's "Add to Chrome", updates, the Settings list, Min's tabs, lifecycle events, toolbar buttons and popups, menu items, options pages, keyboard shortcuts, network-filtering extensions in place of Min's ad blocker, the APIs popular extensions use (`main/extensionAPIs.js`), and idle extensions trimmed.
+
+**Zero cost with none enabled.** At `app.whenReady` main reads `<userData>/extensions.json`; if no extension is enabled, nothing else happens (the library isn't even required). The first enabled extension calls `startChromeExtensions()`: it creates the library on `persist:webcontent` only (private tabs have sessions of their own, so extensions never see them), registering `js/preload/extensionSupportEarly.js` before the library's own preload (the library registers it when it's created) and `js/preload/extensionSupport.js` after it, each as a frame and a service-worker preload. From then on, the three preloads start in every frame and service worker of that session; outside `chrome-extension://` they return at once.
+
+**Files.** `extensions.json` is `{version: 1, extensions: {id: {source, path, name, version, enabled, installedAt, updatedAt, lifecycleEvent, lastUpdateCheck, pendingUpdate: {version}, updateError}}}`. `source` is `'webstore'` (the `.crx` is signed by the Chrome Web Store, however it was installed), `'crx'` or `'unpacked'`. A `.crx` install is unpacked to `<userData>/extensions/<id>/<version>/`. Unpacked folders load from where they are, and Min never deletes them.
+
+**Installing a `.crx`** (`installExtensionFromCrx` → `readExtensionCrx` → review → `installCheckedExtension`; the store and updates share the last two):
+
+- `parseCrx` (unit-tested) reads the CRX3 header and verifies **every** signature, as Chrome does: RSA (field 2) and ECDSA (field 3) proofs, over `"CRX3 SignedData\x00"` + the signed header's length (uint32 LE) + the signed header + the zip. One must be the developer's: the key whose SHA-256 gives the id (its first 16 bytes as letters a–p). `fromWebStore` is true when one is the Chrome Web Store's publisher key (SHA-256 `61f7f2a6…6367cf`, `EXTENSION_WEBSTORE_KEY_HASH`, Chromium's `kPublisherKeyHash`; every store file has it, checked on three). CRX2 is refused.
+- `readExtensionZip` extracts in memory (stored or deflate; refuses `..`, absolute and drive paths; at most 512 MB and 20,000 entries).
+- `readExtensionCrx` also refuses a `minimum_chrome_version` newer than Electron's Chromium, and can require an id (downloads) or the store's signature.
+- The review is a native dialog (`confirmExtensionInstall`): which sites (all, or a list), permission warnings (`describeExtensionPermissions`, strings `extensionPermission*`), and for `webRequestBlocking`/DNR extensions a note that Min's ad blocker is in charge of network requests.
+- The manifest gets `key` = the developer's public key, so Electron gives the extension its Web Store id (the same id and `chrome-extension://` origin as in Chrome).
+- Files are written to `<version>.tmp`, then renamed; the previous version's folder is deleted once the new one is in place.
+
+**The Chrome Web Store** (`js/preload/webStore.js` + `extensions-webstore` in main). The store's page calls `chrome.webstorePrivate` and `chrome.management`, which only Chrome gives it; the preload adds them in the page (main world) on `https://chromewebstore.google.com` and forwards calls to main, which accepts them only from that site's top frame in a Min tab. The store's button stays labeled "Add to Chrome", and the store shows its "Switch to Chrome" banner (Electron's brands are "Chromium", not "Google Chrome"); installing works anyway.
+
+- `beginInstallWithManifest3` → `beginWebStoreInstall`: the review (from the manifest the store sends, with its translated name), then the `.crx` from `getWebStoreDownloadURL` (Google's update server, `response=redirect`), which must be signed by the developer and the Web Store and have the id asked for. If the file asks for more than the store's manifest said, it's reviewed again. `completeInstall` then just answers success.
+- `getExtensionStatus` (`installable` / `enabled` / `disabled`), `management.getAll`/`get`/`setEnabled`/`uninstall` ("Remove from Chrome": Min's own confirmation, then the usual removal). Fixed answers for the rest (incognito: whether the tab is private; login, WebGL, MV2 deprecation…).
+- Answers are `{result, error}`; the preload sets `chrome.runtime.lastError` from `error` while the page's callback runs.
+- Installs, removals and on/off changes made anywhere send `extensions-webstore-event` (`onInstalled`, `onUninstalled`, `onEnabled`, `onDisabled`) to open store tabs, so their button follows.
+- Downloads (`downloadForExtensions`): Electron's `net.fetch`, https only, no cookies (Chrome sends none to update servers), at most 256 MB, and the update server's SHA-256 checked when it gives one.
+
+**Updates** (`checkExtensionUpdates`, Chrome's update protocol): every `.crx` install whose manifest has an https `update_url` (store extensions have Google's, `EXTENSION_WEBSTORE_UPDATE_URL`). One request per update server lists all its extensions with their versions (`getExtensionUpdateCheckURL`); the XML answer (`parseExtensionUpdateResponse`) gives each a newer version and its download URL, or `noupdate`.
+
+- An update that asks for nothing new (`getExtensionPermissionIncrease`, unit-tested) installs at once and keeps the extension's on/off state; its worker gets `onInstalled` with reason `update`.
+- One that asks for more waits: the installed version keeps running, `pendingUpdate` is set, a system notification says so once per version (click: Settings), and Settings offers "review the update". The review shows only what's new ("The new version also asks to: …").
+- Updates from Google's server must be signed by the Web Store too.
+- Schedule (`scheduleExtensionUpdates`, only when a `.crx` install exists): 10 minutes after startup, then hourly checks for extensions not checked in the last 5 hours; and "Check for updates" in Settings. Failures go to `updateError`, shown in Settings.
+
+**Unpacked** (`loadUnpackedExtension`): loading a registered folder again, or "Reload" in Settings, replaces it and counts as an update, as in Chrome.
+
+**Lifecycle events.** Electron never sends `runtime.onInstalled` or `onStartup`. `registerInstalledExtension` stores a `lifecycleEvent` (`{type: 'installed', reason: 'install' | 'update', previousVersion}`). When an extension's worker starts (`serviceWorkers` `running-status-changed` → `starting`), main adds a `min-extension-lifecycle` handler on `worker.ipc`. The worker preload asks it and calls the listeners the background script added, one task after the script's first run. Main answers with the stored event (then deletes it), else `{type: 'startup'}` once per run for extensions not installed in this run, else nothing. If Electron ever sends the events itself, the preload's copies stay quiet.
+
+**Tabs.** `viewManager.js` calls `extensionsTabCreated` (in `createView`; persistent session only), `extensionsTabShown` (in `setView`; it also moves the tab to its window in the library's store, which has no API for that) and `extensionsTabDestroyed` (in `destroyView`).
+
+- The library makes every tab it's given the active one and asks Min to switch to it (pitfall 16). `extensionsTabCreated` adds the tab without changing the active one; a tab becomes active only when Min shows it.
+- `chrome.tabs.create` and `windows.create` → `openTabForExtension` → `extensions-open-tab` → `js/extensions.js` adds the tab (in the background unless `active`) and replies `extensions-tab-opened` with its id; main waits for its view and returns `[webContents, window]`. `windows.create` opens its URLs as tabs in the current window; extensions can't create or close Min's windows.
+- `tabs.update({active: true})` → `extensions-select-tab` (switches task if needed); `tabs.remove` → `extensions-close-tab`.
+- The library also calls these for switches and closes that Min itself made; those are ignored (`minIsSelectingTab`, `extensionTabsClosedByMin`).
+
+**Toolbar buttons and popups.** Every enabled extension with an action (manifest `action`, or `browser_action` in MV2) gets a button in the navbar's `#extension-actions`, after the new-tab button, in install order. The library keeps each action's title, icon, badge and popup, overall and per tab (`browserAction.actionMap`), and tells observers when any of it or the active tab changes. Min adds one observer (`startChromeExtensions`).
+
+- `scheduleExtensionToolbarUpdate` (batched, 50 ms) sends each window its shown tab's buttons (`extensions-toolbar`: `{buttons: [{id, title, badgeText, badgeColor, icon}], commands}`). Icons are data URLs (at most 32 px, cached). The UI asks once at start (`extensions-toolbar-get`).
+- The shown tab per window is `shownTabByWindow` (set in `extensionsTabShown` for every tab, private ones too). A private tab shows no buttons. Every tab switch refreshes the toolbar, because the library doesn't report coming back from a private tab to the tab it still thinks is active.
+- `setIcon` paths are relative to the script that set them (Dark Reader: `"../icons/…"` from `background/`). `getExtensionActionIcon` resolves them as addresses, from the background worker's folder and then the extension's root, so `..` can't leave the extension.
+- A click (`extensions-toolbar-click`, with the button's rectangle) → `browserAction.activateClick`: the popup opens as a child `BrowserWindow` of Min's window, right-aligned with the button and just below it, sized to its content; it closes on a second click or when it loses focus. Without a popup, the extension gets `action.onClicked` with the tab.
+- Right-click (`extensions-toolbar-menu`): Min's own menu, localized. The name (opens its store page or homepage), the extension's `chrome.contextMenus` items for the `action` context, Options, "Remove from Min…" (asks first), "Manage extensions" (Settings).
+- The library's own toolbar element (`<browser-action-list>`), its `crx://` icon protocol and its English-only button menu aren't used.
+
+**Menu items, options pages and keyboard shortcuts.**
+
+- Page menu: each tab's last `context-menu` params are kept (`extensionContextMenuParams`). `webviewMenu.js` passes `extensionsTabId` to `remoteMenu.open`, and `main/remoteMenu.js` appends `getExtensionContextMenuItems(tabId)` (the library's `getContextMenuItems`, real Electron menu items with their clicks) after Min's own items. Several items from one extension go into a submenu named after it.
+- Options: `options_ui.page` or `options_page`, opened in a tab ("Options" in Settings and in the button menu; `runtime.openOptionsPage` through the library).
+- Shortcuts: `getExtensionCommands` turns each `commands.*.suggested_key` into a Min key combo (`getExtensionShortcutCombo`, unit-tested; Chrome's rules: Ctrl, Alt or Command required, Ctrl is Command on a Mac), and fills in `commands.getAll`'s `shortcut`. `js/extensions.js` defines each combo once (keybindings.js can't remove shortcuts) and looks up what it runs now. It skips combos Min already uses (`keybindings.hasShortcut`), as Chrome skips clashing suggestions; the first extension to ask gets a combo. `_execute_action` (and MV2's `_execute_browser_action`/`_execute_page_action`) acts like a click on the button; other names send `commands.onCommand` with the tab (`extensions-command`; the library's router wakes a sleeping worker for it).
+
+**Settings → Extensions** (`pages/settings`, through `js/util/extensionPages.js` → the userscripts preload relay → `extensions-page`, accepted only from the top frame of `min://app/pages/settings/`). A "Get extensions from the Chrome Web Store" link. Actions: `list`, `install-crx`, `load-unpacked`, `set-enabled`, `remove`, `reload`, `open-options`, `check-updates`, `review-update`. Each item shows its icon, name, version, description, source, permissions, the network-filtering note, load errors, a pending update, update errors, and permissions Electron doesn't support ("parts may not work", from Electron's `ExtensionLoadWarning` minus `EXTENSION_PROVIDED_PERMISSIONS`). Changes send `extensions-page-changed` to open Settings pages.
+
+**Disable and remove.** Disabling unloads (data kept). Removing unloads, forgets the extension, clears its origin's storage (`clearData({origins})`) and deletes Min's copy of a `.crx` install. `chrome.storage` and dynamic DNR rules live in `Partitions/webcontent/{Local Extension Settings, Sync Extension Settings, DNR Extension Rules}/<id>` and stay open while Min runs, so `removeLeftoverExtensionData` deletes removed ids' folders at the next startup.
+
+**Clear browsing data** (`clearTabStorageKeepingExtensions`, used by `clearStorageData`) keeps installed extensions' data and workers, as Chrome does: `clearData({dataTypes, excludeOrigins})`. With none installed it's the old `clearStorageData()`, which would also unregister extensions' workers.
+
+**Network filtering by extensions** (uBlock Origin Lite and the like; `applyExtensionNetworkFiltering`). Electron turns off extensions' `webRequest` and `declarativeNetRequest` in a session that has any `webRequest` listener, so an extension can only filter normal tabs' requests once Min's four hooks are gone from `persist:webcontent`.
+
+- On when the setting `extensionsFilterNetwork` is true and an enabled extension filters requests (`extensionUsesNetworkFiltering`: `webRequestBlocking` or DNR permissions; `networkFiltering` in `extensions.json`). Then the four hooks are removed from normal tabs' session (`ses.webRequest.onX(null)`), and put back with `registerFiltering`, `enableGoogleUASwitcher` and `listenForDownloadHeaders` when it turns off. It takes effect for new requests at once; reload tabs for the rest. Private tabs' sessions keep the hooks, so Min's ad blocker still works there.
+- Installing (or loading unpacked) a new extension that filters requests turns the setting on (`finishExtensionInstall`); its review says so ("Adding it turns off Min's ad blocker in normal tabs…"). Settings → Privacy has the switch ("Let <names> block ads and trackers in normal tabs, instead of Min's ad blocker"), shown while such an extension is on. Turning off or removing the last one brings Min's ad blocker back; the setting itself stays. Main keeps `extensionsFilteringNetworkNow` up to date for the UI.
+- Min's ad blocker stands down in normal tabs: no cosmetic filters or scriptlets (`injectCosmeticFiltersForSender`), no popup filter (`filterPopups(url, ses)`), no shield button in the address bar (`contentBlockingToggle.update`). Its blocked-request count doesn't include the extension's blocks.
+- **Static rulesets.** Electron loads an extension's `declarative_net_request.rule_resources` switched off (`getEnabledRulesets()` is `[]`). `updateEnabledRulesets`, called from inside the extension, turns them on, and Electron remembers that across restarts. uBO Lite does it itself; simpler extensions never do. So after an install, update or reload, `enableExtensionDefaultRulesets` turns on the rulesets the manifest marks `enabled` (on an update only new ones, so the extension's own choices stay; `rulesetIds` in `extensions.json`). It runs the call in a hidden page of the extension (`runInExtensionPage`: a `WebContentsView` at `chrome-extension://<id>/manifest.json`, about 200 ms), which works even for extensions without a background worker.
+- **The hooks' other jobs** in normal tabs:
+  - Google sign-in's Firefox user agent (no `Sec-CH-UA*` headers) and tracking-parameter removal become `declarativeNetRequest` rules of a built-in helper extension, `ext/minNetworkHelper` (id `gnpfkmcflhpbhcdmklkmnjkhebgdgnap` from the `key` in its manifest; no code; loaded only while this is on). Min sets its dynamic rules through `runInExtensionPage` (`getNetworkHelperRules`: `modifyHeaders` for `|https://accounts.google.com/`; a `redirect` with `queryTransform.removeParams` per parameter list, only for main-frame addresses that contain one, so form posts aren't redirected), again when the `filtering` setting changes. A per-tab `setUserAgent` doesn't work for this (pitfall 29).
+  - `.user.js` installs: `did-start-navigation` on each tab (`extensionsTabCreated`) calls `promptUserscriptInstall`, so it works from the address alone.
+  - File views (for saving): `did-finish-load` reads `document.contentType` in an isolated world (`reportExtensionTabFileView`), which works even on pages whose CSP sandbox turns off the preload.
+  - Reader view: its `fetch` fails without the cross-origin exception, so it asks main (`internal-page-fetch` in `download.js`: only from a `min://app/reader/` top frame, and only for the address in its `url` parameter; fetched with the tab session's cookies).
+  - PDFs open in Chromium's own viewer (`chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/`) instead of Min's; a Min PDF viewer tab restored in this mode can't load its file.
+  - Lost in this mode: the "block scripts/images" option and Min's fixed `Sec-CH-UA` header on other requests.
+- Removed extensions' storage (`removeLeftoverExtensionData`) keeps the helper's rules folder only while the helper is going to be used.
+
+**`extensionSupport.js`** makes `browser` the same object as `chrome` (pitfall 17), delivers the lifecycle events and adds the APIs below. A worker's preload realm has no `location` (pitfall 18), so the URL is checked in the main world. **`extensionSupportEarly.js`** runs before the library's preload: it skips the library's `Object.freeze(chrome)` (pitfall 31) and refuses media in extensions' hidden pages (pitfall 32).
+
+**APIs Min adds** (`main/extensionAPIs.js`; phase 7). Chosen by a survey of 53 popular Chrome Web Store extensions: a text scan of the APIs their code mentions, against what Min offered (an extension asking for every permission listed `chrome.*` in its worker), then each one installed in the dev build with its errors recorded. The preload adds each API to `chrome` (only with its permission, as Chrome does) and calls main through the library's router (`ipcRenderer.invoke('crx-msg', extensionId, name, ...args)`, handlers from `router.apiHandler()`), which only takes calls from installed extensions and gives each handler the calling extension; events go back with `router.sendEvent` (to a worker too, which it wakes). Promises and Chrome's callbacks both work, with `runtime.lastError` set while a callback runs.
+
+- `tabs.captureVisibleTab` (12 surveyed extensions: screenshots, colour pickers): `capturePage()` of the window's shown tab, JPEG (quality 92) or PNG; needs `activeTab` or all sites; not `min://` pages or other extensions' pages. A covered window has nothing to capture (pitfall 37).
+- `tabs.detectLanguage` (6, translators): the page's `lang` attribute (`zh` becomes `zh-CN`/`zh-TW`), else `und`. Chrome guesses from the text.
+- `tabs.discard`: Min's hibernation (`hibernateTab`); refused for a shown tab and one with sound, video or a call. Without a tab id it does nothing (Chrome picks one).
+- `downloads` (7; the library's are stubs): every download in normal tabs' session is listed (`search`, `onCreated`, `onChanged` on state, pause, name and size changes, `erase`, `pause`/`resume`/`cancel`, `removeFile`, `getFileIcon`). An extension's own downloads go to the Downloads folder without a dialog (unless `saveAs`) under the name it gives (a relative path; `..` and absolute names are refused; " (1)" on a clash), started from its page (so its `blob:` addresses work) or the session. `open` shows the file in its folder instead of running it. They appear in Min's download bar.
+- `privacy` (7, password managers and VPNs; the library's settings never answered): every Chrome setting reads and sets like Chrome's (the last extension to set one controls it, `onChange`), but doesn't change Min yet.
+- `identity` (6): `getRedirectURL`; `launchWebAuthFlow` opens the sign-in page in a window of normal tabs' session (its cookies and Min's Google sign-in fix) and returns when it goes to `https://<id>.chromiumapp.org/`; closing it fails the flow; non-interactive fails once the page has loaded. `getAuthToken` fails as Chrome does with nobody signed in ("The user is not signed in."): it needs a Google account in the browser itself.
+- `sidePanel` (6: Grammarly, DeepL, QuillBot, Bitwarden…): the panel page in a `WebContentsView` at the window's right edge, 360 px wide, under a 36 px title bar the UI draws with the extension's name and a close button; the tab is narrowed beside it (`webviews.adjustMargin`). `viewManager.js` reports the tab's bounds (`extensionsViewBoundsChanged`) and hidden views (`extensionsViewHidden`, for the task overlay and the like); `setView` removes every child view but the UI's, so `extensionsTabShown` puts the panel back (pitfall 38). One panel per window; `setOptions` (per tab too), `setPanelBehavior({openPanelOnActionClick})` (the toolbar button opens and closes it), `open`, `close`, `onOpened`/`onClosed`; the button's menu has "Open side panel". Hidden in full screen. Removing or turning off the extension closes it.
+- `browsingData` (3): `remove` and the `removeX` helpers clear normal tabs' session (`clearData`, `clearCache`), for some sites or all, keeping installed extensions' own data. Electron can only clear everything, so a time range (`since` > 0) is refused.
+- `search.query`: Min's search engine, in the tab or a new one. `tts` (3, Read Aloud): the UI window speaks with `speechSynthesis` and the system's voices; `onEvent` callbacks get start, word, sentence, end and the rest.
+- `action.setIcon` with pixels (`imageData`; AdBlock, Adblock Plus): the library drops it for Manifest V3, so the preload turns it into PNG data with `OffscreenCanvas`. `action.onUserSettingsChanged` and `runtime.onPerformanceWarning` exist but never fire.
+- `storage.sync`: Electron 45.2 added it (a second local area with Chrome's quotas; nothing leaves the computer), and content scripts get it. The library still points `sync` at `local` in extensions' pages and workers, so the preload puts back the real one, from Chromium's own `browser` object, before making `browser` the same as `chrome`. A worker, a content script and the popup then see the same settings and `onChanged` events (pitfall 39).
+- Tab details get the favicon (for tab lists like OneTab) and `highlighted` (`assignTabDetails`). Big extensions install without freezing Min (pitfall 33).
+
+**Startup.** While the enabled extensions load at startup (`extensionsLoadingAtStartup`), a normal tab's first `loadURLInView` waits for them (`whenExtensionsLoadedFor`), so content scripts run in the first page. Loading takes about 20 ms per extension.
+
+**Measured** (dev build, a scripted run of 58 checks; Dark Reader 4.9.134, Bitwarden 2026.10.1 and uBO Lite 2026.1026.1812 from Chrome's update server, plus test extensions written for it):
+
+- zero cost with none (library not loaded, no preloads), again after removing all;
+- `.crx` installs get their Web Store ids, the review text and `key`; unpacked folders load;
+- Dark Reader opens its welcome page on install (`onInstalled` → `tabs.create`); `onInstalled` with reason `update` and the previous version after Reload; `onStartup` once after a restart;
+- `tabs.query`, `create` (foreground and background), `update({active})` and `remove` act on Min's tabs, and content scripts reach the worker; private tabs aren't listed;
+- uBO Lite's worker runs (it crashed before the `browser` fix), but it can't block anything yet (no static rulesets, Min's hooks);
+- disable and enable; clearing browsing data keeps extensions working and their storage while sites' data goes; removing deletes the files, and the storage at the next start; a restart loads everything again.
+- Cost, the three real extensions with one page open: 3 more processes and 248 MB more private memory (about 80 MB each), 0% CPU when idle. The library starts in about 6 ms and an extension loads in 14–23 ms.
+- Toolbar (a third scripted run, 23 checks, with a test extension written for it): no buttons without extensions; the button shows the action's title, icon and badge ("7", green); a click opens the popup under the button (right edges within 2 px), and the popup's `tabs.query` sees the page; a second click closes it; the button menu lists the name, the extension's action item, Options, Remove and Manage; Options opens the options page; the page menu ends with the extension's item; both menu items reach the extension; Alt+Shift+H sends `onCommand` with the tab, Alt+Shift+K opens the popup, and Ctrl+T stays Min's; `commands.getAll` shows "Alt+Shift+H"; with the popup removed, a click sends `onClicked`; no buttons on a private tab, and back afterwards; turning the extension off and on removes and restores its button. Real extensions: Dark Reader's and Bitwarden's buttons show their icons and their full popups open from them.
+- Network filtering (a fourth scripted run, 28 checks, with a rules-only test extension that blocks one ad script, so it can be told apart from Min's ad blocker, which also blocks trackers): Min's blocker blocks both first; loading the extension turns the switch on and loads the helper; in normal tabs trackers then pass and the extension blocks the ad script (its ruleset turned on by Min); private tabs still block both; Settings shows the switch and the notes; the helper's rules are there, and `accounts.google.com` was requested with the Firefox user agent and no client hints (DevTools protocol); `?utm_source=…&keep=1` became `?keep=1`; a `.user.js` opened the install page; a text file counted as a file view and a page didn't; reader view loaded its article through main; a PDF opened in Chromium's viewer (screenshot); switching off in Settings, turning the extension off and removing it each brought Min's blocker back, and switching on or turning it on again handed back; uBO Lite's review shows the warning and uBO Lite blocks the trackers; all of it holds after a restart. Measured separately: uBO Lite blocks with Min's hooks gone (EasyPrivacy trackers), and only then.
+- Phase 7: the survey (53 extensions; 3 more weren't in the store): all install, and all 52 with a background worker run it. Before the fixes, SponsorBlock's worker stopped at start (pitfall 31), Awesome Screenshot crashed Min when its popup opened (pitfall 32) and Wappalyzer froze Min for about 30 s while installing (pitfall 33). A fifth scripted run (35 checks, a test extension written for it) covers every API above: screenshots (PNG 18 KB, JPEG with a callback), French detected, a background tab hibernated and the shown one refused, a download saved under Downloads without a dialog with its events, " (1)" and a refused `..`, privacy get/set/clear/onChange, a sign-in flow through a redirect, a refused non-interactive one and a closed window, the side panel beside a 360 px narrower tab and under its title bar, on top after a tab switch, toggled by the button and closed by the title bar, cookies cleared for one site and a time range refused, a search in a new tab, Windows' voices and spoken events, an icon from pixels, and the panel closed when the extension is removed. Also: Return YouTube Dislike shows its count and SponsorBlock its player button on a real video; after two restarts with nine extensions, the first page had its content script; the footprint numbers in section 10.4.
+- The Web Store (a second scripted run, 30 checks, on Dark Reader's real store page): "Add to Chrome" shows the review with the store's name, downloads, checks both signatures and installs as `webstore`; the button becomes "Remove from Chrome", and `getExtensionStatus`/`getAll` agree; turning it off in Settings shows on the store page; "Remove from Chrome" asks, removes, and the store says "Dark Reader has been removed from Chrome"; the store API is refused from other pages (even Min's UI). Updates: with the installed copy pretending to be 4.9.100, "Check for updates" installed 4.9.134 by itself; with it also pretending to have had fewer sites, the update waited, Settings offered the review, and the review showed only "Read and change all your data on all websites" before installing.
+
+**Known gaps** (later phases, section 15):
+
+- toolbar: every extension with an action gets a button (no overflow menu, pinning or hiding yet); MV2 `page_action` isn't shown; extensions' shortcuts can't be changed (Chrome's chrome://extensions/shortcuts);
+- network filtering: Min's PDF viewer, the "block scripts/images" option and per-site exceptions for the extension aren't available in normal tabs while an extension filters requests; Min's and the extension's memory and CPU use haven't been compared;
+- not possible or not done (survey): `userScripts` (Min's userscripts replace it; Violentmonkey and Tampermonkey ask for Chrome's "Allow User Scripts"), `identity.getAuthToken` (Google sign-in through Chrome), `tabCapture` and `desktopCapture` (Loom, Awesome Screenshot recording; Volume Master), `gcm`/`instanceID`, `tabGroups`, `tabs.move`/`highlight`/`group` (tab `index` is always -1: main doesn't know Min's tab order), `bookmarks`, `history`, `sessions`, `readingList`, `topSites` (empty), `omnibox`, `fontSettings`, `contentSettings`, `pageCapture`, `declarativeContent`, `chrome_url_overrides` (Momentum's new tab);
+- content scripts: `chrome.extension` is missing (Momentum's site script);
+- extensions' hidden pages (offscreen documents) can't use the camera, microphone or screen (pitfall 32);
+- side panels: fixed width, one per window, a tab's own panel path only applies when the panel opens; privacy settings don't change Min (for example `passwordSavingEnabled` could turn off Min's own password capture).
+
 ## 11. Profile folder (`app.getPath('userData')`)
 
 | Item | Path / notes |
@@ -587,7 +725,7 @@ Not supported: `GM_cookie`, `GM_webRequest`, `GM_getTab`/`saveTab`/`getTabs`, `w
 | Installed browser | `%APPDATA%\Min` |
 | `npm start` / dev | `%APPDATA%\Min-development` |
 | Min-Dev package | `%APPDATA%\Min Dev` (its own identity) |
-| Files | `settings.json`, `sessionRestore.json`, `windowBounds.json`, `passwordStore` (safeStorage-encrypted), `adblocker-engine-v2.bin`, optional `customFilters.txt`, `userscripts/`, `userscriptData/` (`scripts.json`, `values/`, `cache/`; section 10.8), `tools/` (Bitwarden/1Password CLIs), plus Chromium's own folders (IndexedDB holds history) |
+| Files | `settings.json`, `sessionRestore.json`, `windowBounds.json`, `passwordStore` (safeStorage-encrypted), `adblocker-engine-v2.bin`, optional `customFilters.txt`, `userscripts/`, `userscriptData/` (`scripts.json`, `values/`, `cache/`; section 10.8), `extensions.json` and `extensions/<id>/<version>/` (section 10.9), `tools/` (Bitwarden/1Password CLIs), plus Chromium's own folders (IndexedDB holds history; `Partitions/webcontent` holds normal tabs' data, including extensions' `Local Extension Settings`, `Sync Extension Settings` and `DNR Extension Rules`) |
 
 ## 12. Conventions
 
@@ -599,7 +737,7 @@ Not supported: `GM_cookie`, `GM_webRequest`, `GM_getTab`/`saveTab`/`getTabs`, `w
 
 ## 13. Verifying changes
 
-Apart from the userscript matcher's unit tests (`npm run test:unit`), there are no automated tests, so verify by running the app.
+Apart from the unit tests for the userscript matcher and the extension package helpers (`npm run test:unit`), there are no automated tests, so verify by running the app.
 
 - **Quick checks:**
   - `node --check <file>`
@@ -617,7 +755,13 @@ Apart from the userscript matcher's unit tests (`npm run test:unit`), there are 
   - Use `Get-CimInstance Win32_Process` (filter `electron.exe` under `node_modules\electron\dist`; `--type=` in the command line identifies renderer, gpu-process and so on), plus `Get-Process` for `PrivateMemorySize64` and `TotalProcessorTime`.
   - GPU: `Get-Counter '\GPU Engine(pid_<pid>_*)\Utilization Percentage'`.
 - **Never touch the user's real profile** (`%APPDATA%\Min`) in experiments. If you must temporarily patch `main.build.js` for an A/B test, back it up and restore it, or rebuild with `npm run buildMain`.
-- **The dev profile holds the user's own test data too.** A test script must back up what it changes there and put it back (`settings.json`, `sessionRestore.json`, `passwordStore`; move `userscripts/` and `userscriptData/` aside instead of deleting them). Running the app also rewrites `sessionRestore.json`.
+- **The dev profile holds the user's own test data too.** A test script must back up what it changes there and put it back (`settings.json`, `sessionRestore.json`, `passwordStore`; move `userscripts/`, `userscriptData/`, `extensions/` and `extensions.json` aside instead of deleting them). Running the app also rewrites `sessionRestore.json`.
+- **Every scripted run must stop by itself, and put the profile back even when it's stopped.** An uncaught exception in main makes Electron show a dialog that **blocks the main process** until someone clicks OK, so a script waiting on main hangs (this happened, pitfall 20). So:
+  - right after connecting to main, add `process.on('uncaughtException', …)` there (any listener stops the dialog) and record the errors;
+  - a watchdog: every few seconds, read those errors, check main still answers (10 s) and Min is still running; stop the run on any of them;
+  - a time limit for the whole run;
+  - the profile backup script records what it set aside before touching anything (a `state.json` in the backup folder), so a run that was killed is restored by the next run, first thing; it also restores on Ctrl+C. After any interrupted run, check for leftover backup folders.
+- **Driving dialogs and main from a script:** add `--inspect=9339` and connect to the Node inspector (`http://127.0.0.1:9339/json/list`) to run code in main, through `process.mainModule.require('electron')`. Main's top-level `let`/`const` aren't reachable there (module scope). Native dialogs can be replaced for a test: `electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] })`, `showMessageBox = async () => ({ response: 0 })`. Then call `extensionPages.request(...)` in a Settings tab over CDP. The UI's own IPC handlers can be triggered with `ipc.emit('addTab', {}, { url })`. Extension workers are `service_worker` targets in `/json/list`, and `session.serviceWorkers.on('console-message')` shows their errors, preload failures included.
 - **Comparing Electron versions:** install the other version in a separate folder (`npm install electron@<version>` there) and launch it with `cwd` set to the repo, so both run the same app code.
 - **YouTube rations ads per visitor.** The dev profile keeps its YouTube cookies, so consecutive test runs alternate: one gets an ad (and in-app clicks stall about 20 s), the next doesn't. Alternating two builds (A, B, A, B) therefore makes one build look worse. Run each build at least twice in a row before blaming it.
 - **A locked screen** counts as covering every window: visible-window tests (frames per second, flicker) give 0 while Windows is locked (`LogonUI` running).
@@ -641,6 +785,30 @@ Apart from the userscript matcher's unit tests (`npm run test:unit`), there are 
 13. `webContents.loadURL()`'s promise rejects (`ERR_ABORTED`) when it cuts short the page that is still loading. Wait for `did-finish-load` with the expected URL instead.
 14. `navigationHistory.goBack()` and `canGoBack()` skip entries for pages that navigated away without a click (Chromium's history intervention). Use `goToIndex(getActiveIndex() - 1)` to reach the previous entry.
 15. `shell.openPath()` on a `.js` file on Windows runs it with Windows Script Host. Open scripts in an editor explicitly (`editUserscript`).
+16. `electron-chrome-extensions` treats every tab passed to `addTab` as the new active tab (its tabs API calls `onActivated` on `tab-added`) and asks the browser to switch to it (`selectTab`). With any extension installed, Ctrl+click would have jumped to the new background tab. Its `createTab` also expects the browser to load the URL itself. See `extensionsTabCreated` and `openTabForExtension`.
+17. Chromium 156 also offers the extension APIs as `browser`, a separate object (even `browser.runtime !== chrome.runtime`) without the library's additions. uBO Lite uses `self.browser || self.chrome` and crashed on `browser.commands.onCommand`, although `chrome.commands` existed. `extensionSupport.js` sets `browser = chrome`.
+18. A `service-worker` session preload runs in a realm of its own: no `self`, no `location`. Check the URL inside `contextBridge.executeInMainWorld`. A preload that throws only logs "Unable to load preload script" to the worker's console.
+19. `urlParser.protocolRegex` didn't allow `-`, so `chrome-extension://…` URLs became searches. It now allows letters, digits, `+`, `.` and `-`.
+20. Don't use Node's global `fetch` (undici) in the main process. Downloading the ad-block lists with it threw an uncaught `AssertionError: assert(!this.paused)` inside undici (Node 24), and Electron's error dialog then froze the main process until OK was clicked; it struck when the cached engine was over 2 days old. Use Electron's `net.fetch` (Chromium's network code, which also follows Min's proxy setting).
+21. `siteUnbreak.js` replaced `window.chrome` with a stand-in on every `*.google.com` page (an upstream fix for Drive's viewer). On the Chrome Web Store that threw away the real object (`runtime` and parts of `management`) and the store API added to it, so the store is excluded.
+22. A function passed into the main world with `contextBridge` must not return something that can't be copied: `listen: cb => ipc.on(...)` returned `ipcRenderer`, so the call threw and nothing after it ran. Use a block body.
+23. Testing the store page: it shows "Add to Chrome" disabled until it has finished loading (wait for it enabled), and a tab in the background doesn't redraw, so its button looks stale until it's shown again.
+24. An extension's `setIcon` path is relative to the script that called it, so it can start with `..` (Dark Reader: `"../icons/dr_active_19.png"` from `background/index.js`). Joining it to the extension's folder points outside it; resolve it as an address (`getExtensionActionIcon`).
+25. Driving the dev build with `webContents.sendInputEvent`: focus the tab first (`wc.focus()`), or a right-click may never become a `context-menu` event. Key events from it do reach Min's keybindings (`before-input-event`).
+26. Electron loads extensions' static DNR rulesets switched off, even those the manifest marks `enabled`; only `updateEnabledRulesets` from inside the extension turns them on (then Electron remembers). Min does it from a hidden page of the extension (section 10.9).
+27. Testing an ad blocker extension by whether ad scripts load is misleading: uBlock Origin redirects well-known ones (`adsbygoogle.js`, `gpt.js`) to harmless stand-ins, which still fire `onload`. Use requests it blocks outright (EasyPrivacy trackers such as `sb.scorecardresearch.com/b`, `google-analytics.com/g/collect`) with `fetch(url, {mode: 'no-cors'})`, which fails only when blocked.
+28. In Node, `new URL('min://app/...').origin` is `"null"` (a non-web scheme); compare `protocol` and `host`.
+29. A tab's `webContents.setUserAgent()` called in `did-start-navigation` doesn't reach that navigation's request (the header and `navigator.userAgentData` stayed Chrome's). Change request headers with a `declarativeNetRequest` `modifyHeaders` rule instead.
+30. Main's `settings.listen(key, cb)` calls `cb` at once with the current value. Register listeners that act on other modules after the app is ready.
+31. `electron-chrome-extensions` ends its preload with `Object.freeze(chrome)`; real Chrome's `chrome` can be added to, and SponsorBlock's worker stopped at start ("Cannot add property contentScripts, object is not extensible"). `extensionSupportEarly.js`, registered before the library's preload, skips that one freeze.
+32. Extensions' offscreen documents (and Manifest V2 background pages) are made by Electron's extension system, not as Electron web contents (`getLastWebPreferences()` is null, context isolation is off). `navigator.mediaDevices.enumerateDevices()` or `getUserMedia()` there crashes the whole browser (exit code 0x80000003, no message in a release build); Awesome Screenshot does it when its popup opens. `extensionSupportEarly.js` makes those calls fail in extension pages without context isolation. Creating the document and `navigator.permissions.query` are fine.
+33. Writing an extension's files with synchronous `fs` calls froze the main process: Wappalyzer's 13,346 files took 21 s to write and 10 s to remove on Windows (each file is scanned). Written with `fs.promises`, 16 at a time, it takes 10 s and the main process never pauses more than about 80 ms.
+34. `sendIPCToWindow` sends `data || {}`: `null` arrives as `{}`. Send an explicit value (the side panel sends `{extensionId: null}`).
+35. `will-download` has no `webContents` for a download started with `session.downloadURL` (an extension's background worker); `download.js` assumed one and threw.
+36. On YouTube, Chromium logs "Unsafe attempt to load URL chrome-extension://… Domains, protocols and ports must match." for extensions' web-accessible files that do load (checked with a test extension: images, scripts, frames, fetch and dynamic URLs all load there and on example.com). It isn't a failure.
+37. `capturePage()` (and so `tabs.captureVisibleTab`) of a covered window fails ("Current display surface not available for capture"): covered windows draw nothing (section 10.4). Scripted tests keep the window on top.
+38. `setView` removes every child view of the window but the UI's before adding the tab's, so any other view of Min's (the side panel) has to be added back after it, and placed from the tab's bounds.
+39. Electron 45.2 added `chrome.storage.sync` (content scripts on 45.1 got the error `"sync" is not available in this instance of Chrome`), but `electron-chrome-extensions` 4.10 still sets `storage.sync = storage.local` in extensions' pages and workers: settings saved there by a popup were invisible to its content scripts. `extensionSupport.js` restores the real `sync`. Settings saved in `sync` before 45.2 stayed in `local`.
 
 ## 15. Open work
 
@@ -648,15 +816,13 @@ Apart from the userscript matcher's unit tests (`npm run test:unit`), there are 
 - Bump `package.json` `version` for fork releases.
 - Document-start scriptlet injection, only if YouTube's late-injection limits become a problem. It could share the userscripts' sync request (section 10.8).
 - Userscripts: unsupported functions (`GM_cookie`, `GM_getTab`/`saveTab`/`getTabs`, `window.onurlchange`), and `GM_openInTab`'s `closed`/`onclose`. Add them if real scripts need them.
-- Chrome extension support (planned, not started). Decisions so far:
-  - Aim for any Chrome Web Store extension, installed as in Chrome ("Add to Chrome", permission review, automatic updates). Load unpacked and `.crx` files too.
-  - Electron is upgraded to 45.1 (43.4.1 didn't deliver MV3 service-worker events).
-  - Any `session.webRequest` listener turns off extensions' `chrome.webRequest` and `declarativeNetRequest` for that session (still true in Electron 45.1, `HasListener()` in `electron_browser_client.cc`). DNR does work when there is no listener (probe, Electron 43). So a network-filtering extension can only work if Min removes all four hooks from `persist:webcontent`. Warn before installing one that it turns off Min's ad blocker; offer to install it without network access instead. Private tabs keep Min's ad blocker (extensions don't run there).
-  - The hooks' other jobs need replacements in that mode: the Google sign-in user agent and tracking-parameter removal (static DNR rules in a built-in extension), PDF and userscript-install detection (`will-download`, or a navigation listener plus a HEAD request), file-view detection (the preload), and the reader/PDF pages' cross-origin fetches (through the main process).
-  - Zero cost with no extensions installed. Heavy extensions are the user's choice; Min only shows their memory/CPU and warns.
-  - Library: `electron-chrome-extensions` (MIT since 4.10.0) for the APIs Electron lacks (action/popups, tabs, windows, contextMenus, notifications…); `electron-chrome-web-store` (MIT, 0.13) or our own code for store installs. That library doesn't verify CRX signatures, so Min must. Untested with Min's `BaseWindow` + `WebContentsView` layout.
-  - Not possible in Electron: `chrome.userScripts` (Tampermonkey; Min's userscripts replace it), `chrome.identity.getAuthToken` (Google sign-in), side panel. Electron 45's `clearStorageData` also unregisters extension service workers, so Min's "clear data" must reload extensions.
-  - Phases, in order: (1) Electron upgrade, done on `chore/electron-45`; (2) a spike: the library with Min's windows, the network-filtering switch, footprint per extension; (3) core: load extensions into `persist:webcontent` only, an Add-ons page shared with userscripts, load unpacked and `.crx`; (4) Chrome Web Store install, signature check, permission review on install and when an update asks for more, updates; (5) toolbar buttons and popups, context-menu items, options pages; (6) the network-filtering switch and warning; (7) fill API gaps found by testing popular extensions.
+- Upstream's Electron upgrade (PalmerAL, `5c7b7aca` to 44 and `441e751e` to 45.2.1, compared 2026-11-05): the same changes as ours (clipboard through main, safeStorage's async methods with a queue, no 32-bit builds). Taken from it: Electron 45.2.x (45.2.2 here, newer) and async file reads and writes in `keychainService.js`. Ours stays where it's stricter: the clipboard handlers only answer Min's own windows (upstream's answer any sender), and back/forward use `webContents.navigationHistory` (upstream still calls the deprecated methods). Upstream's clipboard channel is `clipboardWriteItem` (`ipc.send` with raw `ClipboardItem` data); ours is `clipboardWrite` (`{text, html, bookmark}`); keep ours when merging upstream. Rechecked on 45.2.2: every extension suite (core 58, toolbar 23, network 28, Web Store 30, APIs 35, footprint 4, startup 3, YouTube 3, all passing; YouTube's page scripts no longer get the sync error), a new 9-check run (the Electron version, `storage.sync` shared by a worker, a content script and a popup and kept after a restart, the password store with five saves at once, a delete and a restart), and both userscript suites (the same results as on 45.1, apart from timings and log noise). Min's workarounds for Electron's own behaviour were each retested on 45.2.2 with the workaround switched off, and all are still needed: Electron still sends neither `runtime.onInstalled` nor `onStartup`; `browser` is still a separate object without the library's additions (pitfall 17); rulesets marked `enabled` still load switched off (pitfall 26); and media in an offscreen document still crashes the browser (pitfall 32). The only one 45.2 made unnecessary was the extension library's own `storage.sync` → `local` stand-in, which `extensionSupport.js` now undoes (pitfall 39).
+- Chrome extension support, in seven phases. Done: (1) Electron 45.1 (PR #9, now 45.2.2); (2) a spike with real extensions (findings below and in section 10.9); (3) the core, (4) Chrome Web Store installs and updates, (5) toolbar buttons, popups, menus, options pages and shortcuts, (6) network-filtering extensions in place of Min's ad blocker, and (7) the APIs popular extensions use, a crash and a freeze fixed, idle extensions trimmed and restored tabs waiting for extensions, on `feat/extensions-core` (section 10.9). Decisions: aim for any Chrome Web Store extension, installed as in Chrome; heavy extensions are the user's choice (Min shows their memory and CPU, and warns); zero cost with none installed. Open:
+  - Open after phase 4: the store shows its "Switch to Chrome" banner and pop-up to Min (installing works anyway). Hiding them would mean telling the store, on that site only, that Min is Google Chrome (`navigator.userAgentData` brands and the `Sec-CH-UA` headers); not decided. Requests from the main process (the ad-block lists, extension downloads) go through Min's own ad blocker in the default session; none of their URLs match today's rules, but a rule that did would block them.
+  - Open after phase 5: with many extensions the toolbar has no overflow menu, pinning or hiding (Chrome's puzzle-piece menu); no page for changing extensions' shortcuts; MV2 `page_action` buttons aren't shown.
+  - Open after phase 6: compare the footprint of Min's ad blocker with an extension's (uBO Lite's rules are matched natively, so it may well be cheaper); Min's PDF viewer in that mode (it would need the PDF fetched through main, like reader view).
+  - Open after phase 7: the API gaps listed in section 10.9 (the camera and microphone in offscreen documents would need an Electron fix; `tabCapture`/`desktopCapture` could use Min's screen-share picker; Min's tab order for `tabs.move` and `index`; `storage.sync` in content scripts); test real extensions' side panels (Grammarly, DeepL, Bitwarden) by hand; let the privacy settings act on Min (password saving).
+  - Spike notes on real extensions: Dark Reader darkens pages and its full popup works. Bitwarden's worker runs (including its WebAssembly SDK) and its popup shows the log-in screen; signing in wasn't tried. uBO Lite crashed at start because of the separate `browser` object (pitfall 17), now fixed.
 - Recheck on Electron 45 with the screen unlocked: a covered window's visible case (fps) and no flicker when switching back (section 10.4).
 - The remaining low-footprint items in section 10.4.
 - Ghostery `data:` redirect failures. A possible fix is serving stubs from a privileged custom protocol.

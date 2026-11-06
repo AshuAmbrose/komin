@@ -27,7 +27,10 @@ const modules = [
   'js/util/userscriptMatching.js',
   'main/userscripts.js',
   'main/userscriptAPI.js',
-  'main/userscriptInstall.js'
+  'main/userscriptInstall.js',
+  'js/util/extensionPackages.js',
+  'main/extensions.js',
+  'main/extensionAPIs.js'
 ]
 
 function buildMain () {

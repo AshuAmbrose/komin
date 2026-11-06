@@ -101,6 +101,12 @@ const contentBlockingToggle = {
       return
     }
 
+    // an extension blocks ads in normal tabs instead of Min's ad blocker (main/extensions.js)
+    if (settings.get('extensionsFilteringNetworkNow') === true && !tabs.get(tabId).private) {
+      button.hidden = true
+      return
+    }
+
     button.hidden = false
     if (contentBlockingToggle.isBlockingEnabled(tabs.get(tabId).url)) {
       button.style.opacity = 1

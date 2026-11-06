@@ -311,6 +311,70 @@ body.windows.dark-theme .navbar-action-button:not(:disabled):hover {
   font-size: 1.6em !important;
 }
 
+/* Chrome extensions' toolbar buttons (js/extensions.js) */
+
+#extension-actions {
+  display: inline-flex;
+  vertical-align: top;
+}
+#extension-actions[hidden] {
+  display: none;
+}
+#extension-actions .extension-action-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
+.extension-action-button img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  pointer-events: none;
+}
+.extension-action-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 5px;
+  min-width: 10px;
+  max-width: 28px;
+  height: 12px;
+  padding: 0 2px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(95, 99, 104);
+  color: white;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* an extension's side panel: its title bar, placed beside the tab by js/extensions.js */
+#extension-side-panel-header {
+  position: fixed;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding-left: 12px;
+  border-left: 1px solid rgba(128, 128, 128, 0.3);
+  font-size: 13px;
+}
+#extension-side-panel-header[hidden] {
+  display: none;
+}
+#extension-side-panel-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* audio button */
 .tab-item .tab-audio-button {
   vertical-align: text-bottom;

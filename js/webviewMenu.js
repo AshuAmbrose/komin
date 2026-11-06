@@ -366,7 +366,7 @@ const webviewMenu = {
     // Electron's default menu position is sometimes wrong on Windows with a touchscreen
     // https://github.com/minbrowser/min/issues/903
     var offset = webviews.getViewBounds()
-    remoteMenu.open(menuSections, data.x + offset.x, data.y + offset.y)
+    remoteMenu.open(menuSections, data.x + offset.x, data.y + offset.y, { extensionsTabId: currentTab.id })
   },
   initialize: function () {
     webviews.bindEvent('context-menu', function (tabId, data) {

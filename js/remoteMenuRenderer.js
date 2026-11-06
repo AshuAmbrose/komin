@@ -7,7 +7,8 @@ var menuCallbacks = {}
 
 var nextMenuId = 0
 
-function open (menuTemplate, x, y) {
+// options.extensionsTabId: a page's menu, which also gets the Chrome extensions' items for that tab (main/extensions.js)
+function open (menuTemplate, x, y, options = {}) {
   nextMenuId++
   menuCallbacks[nextMenuId] = {}
   var nextItemId = 0
@@ -31,7 +32,8 @@ function open (menuTemplate, x, y) {
     id: nextMenuId,
     template: prepareToSend(menuTemplate),
     x,
-    y
+    y,
+    extensionsTabId: options.extensionsTabId
   })
 }
 

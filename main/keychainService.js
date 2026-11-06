@@ -18,9 +18,9 @@ file format:
 */
 
 /*
-safeStorage's async methods (the sync ones are deprecated in Electron 45 and go away in 46).
-Files written with the old encryptString can still be read with decryptStringAsync.
-Because reading and writing are now async, changes run one at a time so they don't overwrite each other.
+safeStorage's async methods (the sync ones are deprecated in Electron 45 and go away in 46), and async file reads and
+writes, so the main process isn't blocked. Files written with the old encryptString can still be read with
+decryptStringAsync. Because reading and writing are async, changes run one at a time so they don't overwrite each other.
 */
 let passwordFileQueue = Promise.resolve()
 
@@ -33,7 +33,7 @@ function queuePasswordFileOperation (operation) {
 async function readSavedPasswordFile () {
   let file
   try {
-    file = fs.readFileSync(passwordFilePath)
+    file = await fs.promises.readFile(passwordFilePath)
   } catch (e) {
     if (e.code !== 'ENOENT') {
       console.warn(e)
@@ -57,7 +57,7 @@ async function readSavedPasswordFile () {
 }
 
 async function writeSavedPasswordFile (content) {
-  fs.writeFileSync(passwordFilePath, await safeStorage.encryptStringAsync(JSON.stringify(content)))
+  await fs.promises.writeFile(passwordFilePath, await safeStorage.encryptStringAsync(JSON.stringify(content)))
 }
 
 async function credentialStoreSetPasswordBulk (accounts) {

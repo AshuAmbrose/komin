@@ -327,6 +327,7 @@ const webviews = {
   },
   resize: function () {
     ipc.send('setBounds', { id: webviews.selectedId, bounds: webviews.getViewBounds() })
+    webviews.emitEvent('view-resized', webviews.selectedId)
   },
   goBackIgnoringRedirects: async function (id) {
     const navHistory = await webviews.getNavigationHistory(id)

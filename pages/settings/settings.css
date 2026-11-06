@@ -351,3 +351,33 @@ html {
   cursor: pointer;
   white-space: nowrap;
 }
+
+/* Extensions list (reuses the userscript list's item styles) */
+
+#extensions-manager {
+  max-width: 650px;
+}
+
+#extensions-actions {
+  margin-bottom: 0.6em;
+}
+
+#extensions-actions a,
+#extensions-actions span {
+  font-size: 14px;
+  margin-right: 1em;
+  cursor: pointer;
+}
+
+#extensions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+.extension-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
