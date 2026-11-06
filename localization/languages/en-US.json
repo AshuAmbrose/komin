@@ -93,6 +93,41 @@
     "userscriptGrantResources": "Use the files it downloads",
     "userscriptWarningTrust": "Only install scripts you trust. A script can read and change everything on the pages it runs on.",
     "userscriptWarningEverywhere": "This script runs on every website you visit.",
+    "extensionInstallTitle": "Add \"%s\"?", //%s is the name of a browser extension
+    "extensionInstallCan": "It can:",
+    "extensionInstallNothing": "It doesn't ask for any special permissions.",
+    "extensionInstallNetwork": "It blocks ads and trackers itself. Adding it turns off Min's ad blocker in normal tabs, so that this extension blocks there instead; private tabs keep Min's ad blocker. You can switch back in Settings → Privacy.",
+    "extensionInstallButton": "Add extension",
+    "extensionInstallCancel": "Cancel",
+    "extensionCrxFiles": "Chrome extensions",
+    "extensionPermissionAllSites": "Read and change all your data on all websites",
+    "extensionPermissionSomeSites": "Read and change your data on %s", //%s is a list of websites
+    "extensionPermissionDebugger": "Control pages with the debugger",
+    "extensionPermissionNetwork": "Block or change network requests",
+    "extensionPermissionHistory": "Read and change your browsing history",
+    "extensionPermissionTabs": "Read your browsing history",
+    "extensionPermissionBookmarks": "Read and change your bookmarks",
+    "extensionPermissionCookies": "Read and change cookies",
+    "extensionPermissionClipboardRead": "Read what you copy and paste",
+    "extensionPermissionClipboardWrite": "Change what you copy and paste",
+    "extensionPermissionDownloads": "Manage your downloads",
+    "extensionPermissionNotifications": "Show notifications",
+    "extensionPermissionNativeMessaging": "Talk to apps installed on your computer",
+    "extensionPermissionManagement": "Manage your other extensions",
+    "extensionPermissionRequestTitle": "\"%s\" asks for more permissions", //%s is the name of a browser extension
+    "extensionPermissionRequestAllow": "Allow",
+    "extensionPermissionRequestDeny": "Deny",
+    "extensionUpdateTitle": "Update \"%s\"?", //%s is the name of a browser extension
+    "extensionUpdateCan": "The new version also asks to:",
+    "extensionUpdateButton": "Update",
+    "extensionUpdateNotificationTitle": "\"%s\" has an update that asks for more permissions", //%s is the name of a browser extension
+    "extensionUpdateNotificationBody": "It keeps running as it is until you review the update in Settings.",
+    "extensionNeedsNewerBrowser": "This extension needs a newer browser (Chrome %s or later).", //%s is a version number
+    "extensionMenuOptions": "Options",
+    "extensionMenuRemove": "Remove from Min…",
+    "extensionMenuManage": "Manage extensions",
+    "extensionMenuSidePanel": "Open side panel",
+    "extensionSidePanelClose": "Close side panel",
     "userscriptWarningConnectAnywhere": "This script can send requests to any website, signed in as you.",
     "userscriptWarningDisabled": "User scripts are turned off. Installing this script turns them on.",
     "userscriptWarningEdited": "You've edited the installed copy of this script. Updating replaces your changes.",
@@ -231,6 +266,30 @@
     "settingsUserscriptsLocal": "Local file",
     "settingsUserscriptsRunsOn": "Runs on: %s", //%s is a list of websites
     "settingsUserscriptsLegacy": "Older Min script (no metadata block)",
+    "settingsExtensionsHeading": "Extensions",
+    "settingsExtensionsExplanation": "Chrome extensions add features to Min. Each one you turn on uses some memory and CPU, even while Min is in the background.",
+    "settingsExtensionsInstallCrx": "Install from a .crx file…",
+    "settingsExtensionsLoadUnpacked": "Load unpacked folder…",
+    "settingsExtensionsEmpty": "No extensions yet. Find some in the Chrome Web Store.",
+    "settingsExtensionsFromCrx": "Installed from a .crx file",
+    "settingsExtensionsUnpacked": "Unpacked folder: %s", //%s is a folder on the computer
+    "settingsExtensionsPermissions": "Can: %s", //%s is a list of permissions
+    "settingsExtensionsNetworkFilteringOn": "Blocks ads and trackers in normal tabs, instead of Min's ad blocker.",
+    "settingsExtensionsNetworkFilteringOff": "Its ad and tracker blocking is off, because Min's ad blocker is in use (Settings → Privacy).",
+    "settingsExtensionNetworkFiltering": "Let %s block ads and trackers in normal tabs, instead of Min's ad blocker", //%s is a list of browser extension names
+    "settingsExtensionNetworkFilteringExplanation": "Min's ad blocker keeps working in private tabs. Reload open tabs after switching.",
+    "settingsExtensionsUnsupported": "Min doesn't support all of what it uses yet, so parts of it may not work: %s", //%s is a list of Chrome feature names
+    "settingsExtensionsLoadFailed": "Couldn't start: %s", //%s is an error message
+    "settingsExtensionsReload": "Reload",
+    "settingsExtensionsRemove": "Remove",
+    "settingsExtensionsRemoveConfirm": "Remove \"%s\"? The data it saved is deleted too.", //%s is the name of a browser extension
+    "settingsExtensionsWebStore": "Get extensions from the Chrome Web Store",
+    "settingsExtensionsCheckUpdates": "Check for updates",
+    "settingsExtensionsChecking": "Checking for updates…",
+    "settingsExtensionsFromWebStore": "From the Chrome Web Store",
+    "settingsExtensionsReviewUpdate": "Version %v asks for more permissions: review the update", //%v is a version number
+    "settingsExtensionsUpdateFailed": "Update check failed: %s", //%s is an error message
+    "settingsExtensionsOptions": "Options",
     "settingsUserAgentToggle": "Use a custom user agent",
     "settingsUpdateNotificationsToggle": "Automatically check for updates",
     "settingsUsageStatisticsToggle": {

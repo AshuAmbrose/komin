@@ -404,6 +404,152 @@ userscriptsShowDirectorySection.getElementsByTagName('a')[0].addEventListener('c
   postMessage({ message: 'showUserscriptDirectory' })
 })
 
+/* extensions */
+
+var extensionsList = document.getElementById('extensions-list')
+var extensionsEmpty = document.getElementById('extensions-empty')
+var extensionsStatus = document.getElementById('extensions-status')
+
+// the installed extensions (main/extensions.js)
+function renderExtensionList (extensions) {
+  extensionsList.textContent = ''
+  extensionsEmpty.hidden = extensions.length > 0
+
+  extensions.forEach(function (extension, i) {
+    var item = document.createElement('div')
+    item.className = 'userscript-item extension-item'
+
+    var checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.id = 'extension-' + i
+    checkbox.checked = extension.enabled
+    checkbox.addEventListener('change', function () {
+      runExtensionAction('set-enabled', { id: extension.id, enabled: checkbox.checked })
+    })
+    item.appendChild(checkbox)
+
+    var icon = document.createElement('img')
+    icon.className = 'extension-icon'
+    icon.alt = ''
+    if (extension.icon) {
+      icon.src = extension.icon
+    }
+    item.appendChild(icon)
+
+    var info = document.createElement('div')
+    info.className = 'userscript-info'
+    var name = document.createElement('label')
+    name.htmlFor = checkbox.id
+    name.className = 'userscript-name'
+    name.textContent = extension.name + (extension.version ? ' ' + extension.version : '')
+    info.appendChild(name)
+
+    if (extension.description) {
+      addUserscriptDetail(info, extension.description)
+    }
+    var sources = { webstore: l('settingsExtensionsFromWebStore'), crx: l('settingsExtensionsFromCrx'), unpacked: l('settingsExtensionsUnpacked').replace('%s', extension.path) }
+    addUserscriptDetail(info, sources[extension.source], 'light-fade')
+    if (extension.pendingUpdate) {
+      var review = addUserscriptDetail(info, '')
+      review.appendChild(createUserscriptLink(l('settingsExtensionsReviewUpdate').replace('%v', extension.pendingUpdate), function () {
+        runExtensionAction('review-update', { id: extension.id })
+      }))
+    }
+    if (extension.updateError) {
+      addUserscriptDetail(info, l('settingsExtensionsUpdateFailed').replace('%s', extension.updateError), 'light-fade')
+    }
+    if (extension.permissions.length > 0) {
+      addUserscriptDetail(info, l('settingsExtensionsPermissions').replace('%s', extension.permissions.join('; ')), 'light-fade')
+    }
+    if (extension.networkFiltering && extension.enabled) {
+      addUserscriptDetail(info, l(extension.filteringNetwork ? 'settingsExtensionsNetworkFilteringOn' : 'settingsExtensionsNetworkFilteringOff'), 'light-fade')
+    }
+    if (extension.unsupported.length > 0) {
+      addUserscriptDetail(info, l('settingsExtensionsUnsupported').replace('%s', extension.unsupported.join(', ')), 'light-fade')
+    }
+    if (extension.error) {
+      addUserscriptDetail(info, l('settingsExtensionsLoadFailed').replace('%s', extension.error), 'userscript-error')
+    }
+    item.appendChild(info)
+
+    var actions = document.createElement('div')
+    actions.className = 'userscript-actions'
+    if (extension.hasOptions && extension.loaded) {
+      actions.appendChild(createUserscriptLink(l('settingsExtensionsOptions'), function () {
+        runExtensionAction('open-options', { id: extension.id })
+      }))
+    }
+    if (extension.source === 'unpacked' && extension.enabled) {
+      actions.appendChild(createUserscriptLink(l('settingsExtensionsReload'), function () {
+        runExtensionAction('reload', { id: extension.id })
+      }))
+    }
+    actions.appendChild(createUserscriptLink(l('settingsExtensionsRemove'), function () {
+      if (confirm(l('settingsExtensionsRemoveConfirm').replace('%s', extension.name))) {
+        runExtensionAction('remove', { id: extension.id })
+      }
+    }))
+    item.appendChild(actions)
+
+    extensionsList.appendChild(item)
+  })
+}
+
+function loadExtensionList () {
+  extensionPages.request('list').then(function (extensions) {
+    renderExtensionList(extensions)
+    showExtensionNetworkFiltering(extensions)
+  }, function (e) {
+    extensionsStatus.textContent = e.message
+  })
+}
+
+// Privacy: whether an extension that filters requests blocks ads in normal tabs, or Min's ad blocker does (main/extensions.js)
+var extensionNetworkFilteringSection = document.getElementById('extension-network-filtering')
+var extensionNetworkFilteringCheckbox = document.getElementById('checkbox-extension-network-filtering')
+
+function showExtensionNetworkFiltering (extensions) {
+  var names = extensions.filter(e => e.networkFiltering && e.enabled).map(e => e.name)
+  extensionNetworkFilteringSection.hidden = names.length === 0
+  document.getElementById('extension-network-filtering-label').textContent = l('settingsExtensionNetworkFiltering').replace('%s', names.join(', '))
+}
+
+settings.listen('extensionsFilterNetwork', function (value) {
+  extensionNetworkFilteringCheckbox.checked = value === true
+})
+
+extensionNetworkFilteringCheckbox.addEventListener('change', function () {
+  settings.set('extensionsFilterNetwork', this.checked)
+})
+
+function runExtensionAction (action, args) {
+  extensionsStatus.textContent = ''
+  return extensionPages.request(action, args).catch(function (e) {
+    extensionsStatus.textContent = e.message
+  })
+}
+
+extensionPages.onChange(loadExtensionList)
+loadExtensionList()
+
+document.getElementById('extensions-install-crx').addEventListener('click', function () {
+  runExtensionAction('install-crx')
+})
+
+document.getElementById('extensions-load-unpacked').addEventListener('click', function () {
+  runExtensionAction('load-unpacked')
+})
+
+document.getElementById('extensions-check-updates').addEventListener('click', function () {
+  extensionsStatus.textContent = l('settingsExtensionsChecking')
+  extensionPages.request('check-updates').then(function (extensions) {
+    extensionsStatus.textContent = ''
+    renderExtensionList(extensions)
+  }, function (e) {
+    extensionsStatus.textContent = e.message
+  })
+})
+
 /* show divider between tabs setting */
 
 settings.get('showDividerBetweenTabs', function (value) {

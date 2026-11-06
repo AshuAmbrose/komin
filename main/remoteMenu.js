@@ -20,6 +20,10 @@ ipc.on('open-context-menu', function (e, data) {
     })
     menu.append(new MenuItem({ type: 'separator' }))
   })
+  // Chrome extensions' items for a page's menu (main/extensions.js)
+  if (data.extensionsTabId && typeof getExtensionContextMenuItems === 'function') {
+    getExtensionContextMenuItems(data.extensionsTabId).forEach(item => menu.append(item))
+  }
   menu.on('menu-will-close', function () {
     e.sender.send('context-menu-will-close', { menuId: data.id })
   })

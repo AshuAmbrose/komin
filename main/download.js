@@ -11,7 +11,8 @@ function isAttachment (header) {
 }
 
 function downloadHandler (event, item, webContents) {
-  let sourceWindow = windows.windowFromContents(webContents)?.win
+  // an extension's background worker starts downloads without a page
+  let sourceWindow = webContents && windows.windowFromContents(webContents)?.win
   if (!sourceWindow) {
     sourceWindow = windows.getCurrent()
   }
@@ -156,6 +157,27 @@ function listenForDownloadHeaders (ses) {
     callback({ cancel: false })
   })
 }
+
+/*
+The same exception for reader view when the response hook above isn't there (an extension filters normal tabs' requests,
+main/extensions.js): the page asks main for the page in its url parameter (reader/reader.js, through js/preload/default.js).
+*/
+ipc.handle('internal-page-fetch', async function (event, url) {
+  const frame = event.senderFrame
+  let pageURL = null
+  try {
+    pageURL = frame && !frame.parent && new URL(frame.url)
+  } catch (e) {}
+  if (!pageURL || pageURL.protocol !== 'min:' || pageURL.host !== 'app' || !pageURL.pathname.startsWith('/reader/') || pageURL.searchParams.get('url') !== url || !/^https?:\/\//i.test(url)) {
+    throw new Error('Not allowed')
+  }
+  const response = await event.sender.session.fetch(url, { credentials: 'include', signal: AbortSignal.timeout(60 * 1000) })
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type') || '',
+    body: Buffer.from(await response.arrayBuffer())
+  }
+})
 
 app.once('ready', function () {
   session.defaultSession.on('will-download', downloadHandler)

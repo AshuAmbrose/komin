@@ -118,8 +118,14 @@ function getAdblockerCachePath () {
   return path.join(app.getPath('userData'), 'adblocker-engine-v2.bin')
 }
 
+// Electron's net.fetch (Chromium's network code, Min's proxy setting), not Node's fetch: Node 24's undici can throw an
+// uncaught assertion while downloading the lists, and Electron then freezes the main process behind an error dialog
+function fetchAdblockerList (url) {
+  return net.fetch(url, { credentials: 'omit', cache: 'no-cache', signal: AbortSignal.timeout(60 * 1000) })
+}
+
 function downloadAdblockerEngine () {
-  return ElectronBlocker.fromLists(fetch, ADBLOCKER_LISTS).then(function (engine) {
+  return ElectronBlocker.fromLists(fetchAdblockerList, ADBLOCKER_LISTS).then(function (engine) {
     adblockerEngine = engine
     fs.promises.writeFile(getAdblockerCachePath(), Buffer.from(engine.serialize())).catch(function () {})
     scheduleAdblockerUpdate(ADBLOCKER_ENGINE_MAX_AGE)
@@ -217,8 +223,13 @@ function requestDomainIsException (domain) {
   return enabledFilteringOptions.exceptionDomains.includes(removeWWW(domain))
 }
 
-function filterPopups (url) {
+// ses: the session of the tab opening the popup
+function filterPopups (url, ses) {
   if (!/^https?:\/\//i.test(url)) {
+    return true
+  }
+  // an extension blocks ads in normal tabs instead (main/extensions.js)
+  if (ses && typeof isExtensionNetworkFilteringOn === 'function' && isExtensionNetworkFilteringOn(ses)) {
     return true
   }
 
@@ -454,6 +465,10 @@ settings.listen('filtering', function (value) {
 
 function injectCosmeticFiltersForSender (engine, sender, url) {
   if (!engine || !sender || sender.isDestroyed()) {
+    return
+  }
+  // an extension blocks ads in normal tabs instead (main/extensions.js)
+  if (typeof isExtensionNetworkFilteringOn === 'function' && isExtensionNetworkFilteringOn(sender.session)) {
     return
   }
   const hostname = parser.getUrlHost(url)

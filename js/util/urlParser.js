@@ -17,7 +17,7 @@ var urlParser = {
   validDomainRegex: /^(?!-)(?:.*@)*?([a-z0-9-._]+[a-z0-9]|\[[:a-f0-9]+\])/i,
   unicodeRegex: /[^\u0000-\u00ff]/,
   removeProtocolRegex: /^(https?|file):\/\//i,
-  protocolRegex: /^[a-z0-9]+:\/\//, // URI schemes can be alphanum
+  protocolRegex: /^[a-z0-9+.-]+:\/\//, // URI schemes can be alphanum, +, . and - (chrome-extension://)
   isURL: function (url) {
     return urlParser.protocolRegex.test(url) || url.indexOf('about:') === 0 || url.indexOf('chrome:') === 0 || url.indexOf('data:') === 0
   },

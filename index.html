@@ -147,6 +147,7 @@
           data-label="newTabAction"
           tabindex="-1"
         ></button>
+        <div id="extension-actions" hidden></div>
       </div>
     </div>
 
@@ -191,6 +192,17 @@
     </div>
 
     <div id="overlay"></div>
+
+    <!-- the title bar of an extension's side panel, whose page main places just below it (js/extensions.js) -->
+    <div id="extension-side-panel-header" class="theme-background-color theme-text-color" hidden>
+      <span id="extension-side-panel-title"></span>
+      <button
+        id="extension-side-panel-close"
+        class="navbar-action-button i carbon:close"
+        data-label="extensionSidePanelClose"
+        tabindex="-1"
+      ></button>
+    </div>
 
     <div id="webviews">
       <div id="leftArrowContainer" class="arrow-indicator">

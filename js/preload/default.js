@@ -129,4 +129,10 @@ window.addEventListener('message', function (e) {
   if (e.data?.message === 'downloadFile') {
     ipc.send('downloadFile', e.data.url)
   }
+
+  // reader view's page, fetched by main when the page can't fetch it itself (reader/reader.js)
+  if (e.data?.message === 'internalPageFetch' && e.source === window) {
+    const reply = data => window.postMessage(Object.assign({ message: 'internalPageFetchResult', requestId: e.data.requestId }, data), window.location.origin)
+    ipc.invoke('internal-page-fetch', e.data.url).then(result => reply({ result }), error => reply({ error: String(error.message) }))
+  }
 })

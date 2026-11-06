@@ -76,6 +76,12 @@
 
       <div id="content-type-blocking"></div>
 
+      <div class="setting-section" id="extension-network-filtering" hidden>
+        <input type="checkbox" id="checkbox-extension-network-filtering" />
+        <label for="checkbox-extension-network-filtering" id="extension-network-filtering-label"></label>
+        <div class="settings-info-subheading setting-secondary-label" data-string="settingsExtensionNetworkFilteringExplanation"></div>
+      </div>
+
       <div class="setting-section" id="site-permissions-section">
         <label data-string="settingsSitePermissionsHeading"></label>
         <div id="site-permissions-container">
@@ -262,6 +268,23 @@
       </div>
     </div>
 
+    <div class="settings-container" id="extensions-settings-container">
+      <h3 data-string="settingsExtensionsHeading"></h3>
+      <div class="settings-info-subheading" data-string="settingsExtensionsExplanation"></div>
+
+      <div class="setting-section" id="extensions-manager">
+        <div id="extensions-actions">
+          <a id="extensions-web-store" href="https://chromewebstore.google.com/category/extensions" target="_blank" data-string="settingsExtensionsWebStore"></a>
+          <a id="extensions-install-crx" data-string="settingsExtensionsInstallCrx"></a>
+          <a id="extensions-load-unpacked" data-string="settingsExtensionsLoadUnpacked"></a>
+          <a id="extensions-check-updates" data-string="settingsExtensionsCheckUpdates"></a>
+          <span id="extensions-status" class="light-fade"></span>
+        </div>
+        <div id="extensions-empty" class="settings-info-subheading" data-string="settingsExtensionsEmpty" hidden></div>
+        <div id="extensions-list"></div>
+      </div>
+    </div>
+
     <div class="settings-container" id="search-engine-settings-container">
       <h3 data-string="settingsSearchEngineHeading"></h3>
 
@@ -396,6 +419,7 @@
     <script src="../../js/util/passwordManager.js"></script>
     <script src="../../dist/localization.build.js"></script>
     <script src="../../js/util/userscriptPages.js"></script>
+    <script src="../../js/util/extensionPages.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

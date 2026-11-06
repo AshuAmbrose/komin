@@ -97,6 +97,14 @@ function defineShortcut (keysOrKeyMapName, fn, options = {}) {
   })
 }
 
+// whether Min already uses these keys (in any order), as a shortcut here or in its key map; for extensions' shortcuts
+function hasShortcut (combo) {
+  const normalize = keys => keys.split('+').map(key => ({ mod: window.platformType === 'mac' ? 'super' : 'ctrl', option: 'alt' })[key] || key).sort().join('+')
+  const wanted = normalize(combo)
+  const defined = shortcutsList.map(shortcut => shortcut.combo).concat(...Object.values(keyMap).map(keys => [].concat(keys)))
+  return defined.some(keys => typeof keys === 'string' && normalize(keys) === wanted)
+}
+
 let keyboardMap
 
 navigator.keyboard.getLayoutMap().then(map => {
@@ -169,4 +177,4 @@ function initialize () {
 
 initialize()
 
-module.exports = { defineShortcut }
+module.exports = { defineShortcut, hasShortcut }

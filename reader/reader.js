@@ -373,10 +373,39 @@ function processArticle (data) {
   }
 }
 
+/*
+This page reads other sites' pages thanks to Min's response hook (main/download.js). Without it (an extension filters
+normal tabs' requests, main/extensions.js) the request fails, and main fetches the page instead, relayed by the preload.
+*/
+function fetchThroughMin (url) {
+  return new Promise(function (resolve, reject) {
+    var requestId = Math.random().toString(36).slice(2)
+    window.addEventListener('message', function listener (e) {
+      if (e.source !== window || !e.data || e.data.message !== 'internalPageFetchResult' || e.data.requestId !== requestId) {
+        return
+      }
+      window.removeEventListener('message', listener)
+      if (e.data.error) {
+        reject(new Error(e.data.error))
+      } else {
+        var result = e.data.result
+        resolve(new Response(result.body, {
+          status: result.status >= 200 && result.status <= 599 ? result.status : 200,
+          headers: { 'content-type': result.contentType }
+        }))
+      }
+    })
+    window.postMessage({ message: 'internalPageFetch', requestId: requestId, url: url }, window.location.origin)
+  })
+}
+
 fetch(articleURL, {
   credentials: 'include',
   cache: 'force-cache'
 })
+  .catch(function () {
+    return fetchThroughMin(articleURL)
+  })
   .then(function (response) {
     /*
     response.text() assumes the response is always UTF-8

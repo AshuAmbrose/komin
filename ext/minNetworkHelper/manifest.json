@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Min network helper",
+  "version": "1.0",
+  "description": "Built into Min, and only loaded while an extension filters normal tabs' network requests: keeps Google sign-in and tracking-parameter removal working with rules Min sets (main/extensions.js).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxzTPirkI5Y5r87KTz3fBYjyu2ZZHDIR1l+blZklNi+wLMZw+6sN6ENmtc4kjzz814T1EITlXekKLGE8CSYO+rmcXNszB8IwrVuVhM1NoGxh8BFFcdkF/6hg/rNVIC6NPZn16ZNd9MyNQBFuybJKXBoESHyCpS/UvVr421s1J3XdO3/hrk2uogphDiDqzixNi/k08RMc/N+DC9XtjdFJp65lODXKWz2XMyebyQKsRRfJadYYMFMhKwEIsjYIP/le+qmjSZjmDy8MEzp7bcTlfLnfN0Ui3YObA0JDuyQeVWrtNV+mTOQiVTCvzJla0Zf0lHEisiy5f0F6Sf4dYhFZJ0wIDAQAB",
+  "permissions": [
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

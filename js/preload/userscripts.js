@@ -590,22 +590,28 @@ if (window.location.protocol === 'http:' || window.location.protocol === 'https:
   }
 }
 
-// the install page and Settings: {message: 'userscripts', requestId, action, args} → {message: 'userscriptsResult', requestId, result | error}
+// the install page and Settings: {message: 'userscripts', requestId, action, args} → {message: 'userscriptsResult', requestId, result | error};
+// Settings' extension list the same way, with 'extensions' (main/extensions.js)
 if (window.location.protocol === 'min:') {
+  const pageChannels = { userscripts: 'userscripts-page', extensions: 'extensions-page' }
   window.addEventListener('message', function (e) {
-    if (e.source !== window || !e.data || e.data.message !== 'userscripts') {
+    if (e.source !== window || !e.data || !Object.hasOwn(pageChannels, e.data.message)) {
       return
     }
+    const name = e.data.message
     const requestId = e.data.requestId
-    ipc.invoke('userscripts-page', { action: e.data.action, args: e.data.args }).then(function (result) {
-      window.postMessage({ message: 'userscriptsResult', requestId, result }, window.location.origin)
+    ipc.invoke(pageChannels[name], { action: e.data.action, args: e.data.args }).then(function (result) {
+      window.postMessage({ message: name + 'Result', requestId, result }, window.location.origin)
     }, function (error) {
       const message = String(error.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-      window.postMessage({ message: 'userscriptsResult', requestId, error: message }, window.location.origin)
+      window.postMessage({ message: name + 'Result', requestId, error: message }, window.location.origin)
     })
   })
 
   ipc.on('userscripts-page-changed', function () {
     window.postMessage({ message: 'userscriptsChanged' }, window.location.origin)
+  })
+  ipc.on('extensions-page-changed', function () {
+    window.postMessage({ message: 'extensionsChanged' }, window.location.origin)
   })
 }

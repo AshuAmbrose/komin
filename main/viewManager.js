@@ -87,7 +87,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
   })
 
   view.webContents.setWindowOpenHandler(function (details) {
-    if (details.url && !filterPopups(details.url)) {
+    if (details.url && !filterPopups(details.url, view.webContents.session)) {
       return {
         action: 'deny'
       }
@@ -253,6 +253,10 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
   viewMap[id] = view
   tabLastActivity[id] = Date.now()
 
+  if (typeof extensionsTabCreated === 'function') {
+    extensionsTabCreated(view)
+  }
+
   return view
 }
 
@@ -267,6 +271,9 @@ function destroyView (id) {
       windows.getState(window).selectedView = null
     }
   })
+  if (typeof extensionsTabDestroyed === 'function') {
+    extensionsTabDestroyed(viewMap[id].webContents)
+  }
   viewMap[id].webContents.destroy()
 
   delete viewMap[id]
@@ -302,6 +309,10 @@ function setView (id, senderContents) {
     windows.getState(win).selectedView = id
     restoreTabMemoryPriority(viewMap[id].webContents)
 
+    if (typeof extensionsTabShown === 'function') {
+      extensionsTabShown(viewMap[id], win)
+    }
+
     if (typeof scheduleInactiveTabTrim === 'function') {
       scheduleInactiveTabTrim()
     }
@@ -311,6 +322,10 @@ function setView (id, senderContents) {
 function setBounds (id, bounds) {
   if (viewMap[id]) {
     viewMap[id].setBounds(bounds)
+    // an extension's side panel sits beside the tab (extensionAPIs.js)
+    if (typeof extensionsViewBoundsChanged === 'function') {
+      extensionsViewBoundsChanged(id, bounds)
+    }
   }
 }
 
@@ -332,6 +347,9 @@ function hideCurrentView (senderContents) {
   if (currentId) {
     win.getContentView().removeChildView(viewMap[currentId])
     windows.getState(win).selectedView = null
+    if (typeof extensionsViewHidden === 'function') {
+      extensionsViewHidden(win)
+    }
     if (win.isFocused()) {
       getWindowWebContents(win).focus()
     }
@@ -392,6 +410,16 @@ ipc.on('hideCurrentView', function (e) {
 })
 
 function loadURLInView (id, url, win) {
+  // at startup, normal tabs wait for extensions to load (main/extensions.js)
+  const extensionsLoading = typeof whenExtensionsLoadedFor === 'function' && whenExtensionsLoadedFor(viewMap[id].webContents)
+  if (extensionsLoading) {
+    extensionsLoading.then(function () {
+      if (viewMap[id]) {
+        loadURLInView(id, url, win)
+      }
+    })
+    return
+  }
   // wait until the first URL is loaded to set the background color so that new tabs can use a custom background
   if (!viewStateMap[id].loadedInitialURL) {
     // Give the site a chance to display something before setting the background, in case it has its own dark theme
@@ -556,6 +584,15 @@ function getTabProcessGroups () {
     } else {
       pids.forEach(pid => inactivePids.add(pid))
     }
+  }
+
+  // extensions' processes (main/extensions.js) are trimmed while Min isn't in use, unless they show a popup or a side
+  // panel or play sound; their background workers otherwise page back in on every page load
+  if (typeof getExtensionProcesses === 'function') {
+    const extensionProcesses = getExtensionProcesses()
+    const minInUse = windows.getAll().some(win => win.isFocused())
+    extensionProcesses.busy.forEach(pid => protectedPids.add(pid))
+    extensionProcesses.idle.forEach(pid => (minInUse ? protectedPids : inactivePids).add(pid))
   }
 
   return {
