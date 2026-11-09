@@ -214,9 +214,6 @@ test('permissions: all sites, listed sites, labeled and other permissions', func
   assert.strictEqual(some.allSites, false)
   assert.deepStrictEqual(some.sites, ['*.example.com', 'https://github.com'])
   assert.deepStrictEqual(some.items, [])
-
-  const mv2 = describeExtensionPermissions({ manifest_version: 2, permissions: ['http://*/*', 'https://*/*', 'tabs'] })
-  assert.strictEqual(mv2.allSites, true)
 })
 
 test('shortcuts: suggested keys as Min key combos', function () {

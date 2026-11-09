@@ -280,7 +280,7 @@ Unknown permissions are returned by name in "other".
 */
 function describeExtensionPermissions (manifest) {
   const permissions = (manifest.permissions || []).filter(p => typeof p === 'string')
-  const hosts = (manifest.host_permissions || []).concat(manifest.manifest_version === 2 ? permissions.filter(p => p.includes('://') || p === '<all_urls>') : [])
+  const hosts = manifest.host_permissions || []
   const contentScriptHosts = (manifest.content_scripts || []).flatMap(script => script.matches || [])
   const allHosts = hosts.concat(contentScriptHosts)
   const result = { sites: [], allSites: allHosts.some(h => EXTENSION_ALL_SITES.includes(h)), items: [], other: [] }

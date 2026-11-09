@@ -10,7 +10,8 @@
      sends them itself, these copies stay quiet;
    - adds the APIs main/extensionAPIs.js provides (screenshots, a page's language, tabs.discard, downloads, privacy,
      identity, side panels, browsing data, search, speech), and action.setIcon with imageData. They call main through
-     the library's router ("crx-msg"), as its own APIs do. */
+     the library's router ("crx-msg"), as its own APIs do;
+   - puts the finished API objects back after Chromium rebuilds them (whenever any extension is loaded or unloaded). */
 
 ;(function () {
   const isWorker = process.type === 'service-worker'
@@ -47,6 +48,30 @@
         chrome.storage.sync = nativeStorage.sync
       }
       globalThis.browser = chrome
+    }
+
+    // Chromium rebuilds some API objects (runtime, tabs, extension, action, storage, permissions) whenever any extension
+    // is loaded or unloaded, dropping what the library and this file added to them. The finished objects are kept, and
+    // put back when main asks (restoreExtensionAPIsEverywhere in main/extensions.js); the old objects keep working.
+    function keepFinishedAPIs () {
+      const finished = {}
+      Object.getOwnPropertyNames(chrome).forEach(function (name) {
+        const value = chrome[name]
+        // an API can still be undefined this early (a page's declarativeNetRequest was): putting that back would remove it
+        if (value && (typeof value === 'object' || typeof value === 'function')) {
+          finished[name] = value
+        }
+      })
+      Object.defineProperty(globalThis, Symbol.for('min.restoreExtensionAPIs'), {
+        configurable: true,
+        value: function () {
+          Object.keys(finished).forEach(function (name) {
+            if (chrome[name] !== finished[name]) {
+              Object.defineProperty(chrome, name, { value: finished[name], writable: true, enumerable: true, configurable: true })
+            }
+          })
+        }
+      })
     }
 
     const extensionId = chrome.runtime.id
@@ -105,6 +130,7 @@
     }
 
     if (!manifest) {
+      keepFinishedAPIs()
       return
     }
 
@@ -179,6 +205,9 @@
     /* The APIs */
 
     if (chrome.tabs) {
+      // Chrome's constants, which the library's chrome.tabs lacks (6 of the 53 surveyed extensions use TAB_ID_NONE)
+      const constants = { TAB_ID_NONE: -1, TAB_INDEX_NONE: -1, MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND: 2 }
+      Object.keys(constants).filter(name => chrome.tabs[name] === undefined).forEach(name => { chrome.tabs[name] = constants[name] })
       chrome.tabs.captureVisibleTab = api('tabs.captureVisibleTab')
       chrome.tabs.detectLanguage = api('tabs.detectLanguage')
       chrome.tabs.discard = api('tabs.discard')
@@ -315,7 +344,7 @@
       })
     }
 
-    const action = chrome.action || chrome.browserAction
+    const action = chrome.action
     // events newer Chrome sends and Min doesn't: when the user pins or unpins the button (Min's toolbar doesn't), and
     // when Chrome finds the extension slowing the browser down
     if (action && !action.onUserSettingsChanged) {
@@ -326,7 +355,7 @@
     }
 
     // the library drops a Manifest V3 icon given as pixels; it's sent as PNG data here
-    if (manifest.manifest_version === 3 && action && typeof action.setIcon === 'function' && typeof OffscreenCanvas === 'function') {
+    if (action && typeof action.setIcon === 'function' && typeof OffscreenCanvas === 'function') {
       const setIcon = action.setIcon
       const toDataURL = async function (imageData) {
         const canvas = new OffscreenCanvas(imageData.width, imageData.height)
@@ -352,11 +381,21 @@
         return settle(sent, callback)
       }
     }
+
+    keepFinishedAPIs()
   }
 
-  if (process.contextIsolated && contextBridge.executeInMainWorld) {
-    contextBridge.executeInMainWorld({ func: extendExtensionAPIs, args: [bridge] })
-  } else {
-    extendExtensionAPIs(bridge)
+  function restoreExtensionAPIs () {
+    const restore = globalThis[Symbol.for('min.restoreExtensionAPIs')]
+    if (typeof restore === 'function') {
+      restore()
+    }
   }
+
+  const runInExtensionWorld = func => process.contextIsolated && contextBridge.executeInMainWorld
+    ? contextBridge.executeInMainWorld({ func, args: [bridge] })
+    : func(bridge)
+
+  runInExtensionWorld(extendExtensionAPIs)
+  ipcRenderer.on('min-extension-restore-apis', () => runInExtensionWorld(restoreExtensionAPIs))
 })()

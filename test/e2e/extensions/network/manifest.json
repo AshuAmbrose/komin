@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: network",
+  "version": "1.0",
+  "description": "Test extension written for Min's extension spike: blocks one ad script with a declarativeNetRequest rule and watches requests with webRequest.",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["declarativeNetRequest", "webRequest"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [{ "id": "block", "enabled": true, "path": "rules.json" }]
+  }
+}

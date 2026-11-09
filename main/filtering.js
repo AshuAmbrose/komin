@@ -119,9 +119,13 @@ function getAdblockerCachePath () {
 }
 
 // Electron's net.fetch (Chromium's network code, Min's proxy setting), not Node's fetch: Node 24's undici can throw an
-// uncaught assertion while downloading the lists, and Electron then freezes the main process behind an error dialog
+// uncaught assertion while downloading the lists, and Electron then freezes the main process behind an error dialog.
+// net.fetch only works once the app is ready, and a new profile's first download starts while main is still loading
+// (settings.listen calls back at once), so wait for it.
 function fetchAdblockerList (url) {
-  return net.fetch(url, { credentials: 'omit', cache: 'no-cache', signal: AbortSignal.timeout(60 * 1000) })
+  return app.whenReady().then(function () {
+    return net.fetch(url, { credentials: 'omit', cache: 'no-cache', signal: AbortSignal.timeout(60 * 1000) })
+  })
 }
 
 function downloadAdblockerEngine () {

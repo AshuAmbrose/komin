@@ -3,7 +3,7 @@
    service workers in that session, so it does nothing outside chrome-extension:// pages. It:
    - skips the library's last step, freezing `chrome`, which real Chrome doesn't: SponsorBlock adds to it and stopped at
      start, and extensionSupport.js adds Min's APIs to it too;
-   - stops the camera, microphone and device list in extensions' offscreen documents (and Manifest V2 background pages).
+   - stops the camera, microphone and device list in extensions' offscreen documents.
      Electron makes those itself, not as its own web contents, and asking for media there crashes the whole browser
      (Electron 45; Awesome Screenshot did). They're the extension pages without context isolation; there, those calls
      fail as if the user had said no. */

@@ -8,7 +8,7 @@ var browserUI = require('browserUI.js')
 var keybindings = require('keybindings.js')
 var searchEngine = require('util/searchEngine.js')
 
-const EXECUTE_ACTION_COMMANDS = ['_execute_action', '_execute_browser_action', '_execute_page_action']
+const EXECUTE_ACTION_COMMANDS = ['_execute_action']
 
 const extensions = {
   renderedButtons: '',

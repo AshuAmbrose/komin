@@ -123,6 +123,7 @@
     "extensionUpdateNotificationTitle": "\"%s\" has an update that asks for more permissions", //%s is the name of a browser extension
     "extensionUpdateNotificationBody": "It keeps running as it is until you review the update in Settings.",
     "extensionNeedsNewerBrowser": "This extension needs a newer browser (Chrome %s or later).", //%s is a version number
+    "extensionManifestV2": "This extension uses Manifest V2, an older format that Chrome and Min no longer support.",
     "extensionMenuOptions": "Options",
     "extensionMenuRemove": "Remove from Min…",
     "extensionMenuManage": "Manage extensions",
