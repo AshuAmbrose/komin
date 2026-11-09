@@ -87,6 +87,7 @@ These don't pass or fail. They record numbers, and AGENTS.md has the results of 
 
 | Script | Does |
 |---|---|
+| `open.js [url]` | opens Min (the dev build, or the packaged app with `MIN_TEST_PACKAGED=1`) with a throwaway profile, to look at it or try a change by hand; its output goes to the terminal, and the profile is deleted when Min closes. Use it instead of `npm start`, which runs on the maintainer's dev profile |
 | `extract-crx.js <id \| file.crx> [folder]` | unpacks an extension (from the cache, or downloaded from Chrome's update server) into `results/crx/<id>-<version>` to read its code, with Min's own CRX reader |
 | `heap-summary.js <file.heapsnapshot>` | summarizes a heap snapshot from `measure-memory.js` |
 | `measure-extension-survey.js [--scan] <id>` | one extension instead of the 53: what its code uses (`--scan`: what of it Min lacks), or installed in Min with its errors, popup and options page |
