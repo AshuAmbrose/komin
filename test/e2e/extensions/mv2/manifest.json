@@ -1,0 +1,8 @@
+{
+  "manifest_version": 2,
+  "name": "Min test: Manifest V2",
+  "version": "1.0",
+  "description": "An extension in the older format (a background page and a browser action), which Min refuses as Chrome does.",
+  "background": { "scripts": ["background.js"], "persistent": false },
+  "browser_action": { "default_title": "Min test: Manifest V2" }
+}

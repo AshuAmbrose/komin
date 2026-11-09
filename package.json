@@ -67,6 +67,7 @@
     "postinstall": "node ./scripts/setupDevEnv.js",
     "test": "standard --verbose js/**/*.js main/*.js",
     "test:unit": "node --test test/*.test.js",
+    "test:e2e": "node test/e2e/run.js",
     "watch": "node ./scripts/watch.js",
     "startElectron": "electron . --development-mode",
     "start": "npm run build && concurrently \"npm run watch\" \"npm run startElectron\"",

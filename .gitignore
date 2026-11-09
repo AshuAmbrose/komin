@@ -7,3 +7,6 @@ main.build.js
 .DS_Store
 package-lock.json
 yarn.lock
+
+# end-to-end test output (test/e2e/README.md)
+/test/e2e/results

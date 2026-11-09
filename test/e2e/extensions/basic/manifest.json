@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: basic",
+  "version": "1.0",
+  "description": "Test extension written for Min's extension spike: background worker events, a content script, a popup and a context menu item.",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["storage", "alarms", "tabs", "contextMenus"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_end" }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Min test" }
+}

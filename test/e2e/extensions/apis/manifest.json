@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: APIs",
+  "version": "1.0",
+  "description": "Test extension written for Min's phase 7: the APIs Min adds (screenshots, page language, discard, downloads, privacy, identity, side panel, browsing data, search, speech, icons as pixels).",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["tabs", "storage", "downloads", "privacy", "identity", "sidePanel", "browsingData", "search", "tts"],
+  "host_permissions": ["<all_urls>"],
+  "side_panel": { "default_path": "panel.html" },
+  "action": { "default_title": "Min API test", "default_icon": { "32": "icon.png" } }
+}

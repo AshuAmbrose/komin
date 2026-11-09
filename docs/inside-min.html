@@ -1,0 +1,1617 @@
+<title>Inside Min</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,750&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a sticky chapter list on the left, one reading column (about 70 characters) on the right; one column on phones.
+   Every file is tagged with the process its code runs in, using the same five colors as the diagrams' legend. */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --sunken: #eceff4;
+  --fg: #1a1e25;
+  --muted: #586273;
+  --line: #d9dee6;
+  --accent: #1d5fd1;
+  --c-main: #a8620d;
+  --c-ui: #0b7f86;
+  --c-page: #6a46c2;
+  --c-net: #b8324f;
+  --c-build: #4a5b72;
+  --tint-main: #fbf1e3;
+  --tint-ui: #e2f4f4;
+  --tint-page: #efe9fb;
+  --tint-net: #fbe8ec;
+  --tint-build: #e9edf3;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1.0625rem;
+  --step-1: 1.25rem;
+  --step-2: 1.6rem;
+  --step-3: 2.3rem;
+  --step-4: clamp(2.6rem, 6vw, 3.6rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101318; --surface: #171b22; --sunken: #1e232b; --fg: #e6e9ee; --muted: #9aa4b2; --line: #2b313b; --accent: #7fb0ff;
+    --c-main: #e5a454; --c-ui: #46c6cc; --c-page: #a98cf3; --c-net: #f17b95; --c-build: #a3b4ca;
+    --tint-main: #2b2114; --tint-ui: #12282a; --tint-page: #221b33; --tint-net: #2e1820; --tint-build: #1d232d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101318; --surface: #171b22; --sunken: #1e232b; --fg: #e6e9ee; --muted: #9aa4b2; --line: #2b313b; --accent: #7fb0ff;
+  --c-main: #e5a454; --c-ui: #46c6cc; --c-page: #a98cf3; --c-net: #f17b95; --c-build: #a3b4ca;
+  --tint-main: #2b2114; --tint-ui: #12282a; --tint-page: #221b33; --tint-net: #2e1820; --tint-build: #1d232d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code, kbd, pre { font-family: var(--font-mono); }
+code { font-size: 0.88em; background: var(--sunken); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+kbd { font-size: 0.82em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0.05em 0.4em; background: var(--surface); white-space: nowrap; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h2 { font-size: var(--step-3); font-weight: 750; letter-spacing: -0.01em; }
+h3 { font-size: var(--step-1); font-weight: 600; margin-top: 2.2em; }
+p, ul, ol, table, pre, dl { margin: 0; }
+.prose > * + * { margin-top: 1em; }
+.prose ul, .prose ol { padding-left: 1.3em; }
+.prose li + li { margin-top: 0.35em; }
+
+/* page header */
+.masthead { max-width: 1180px; margin: 0 auto; padding-block: 56px 36px; display: grid; gap: 18px; }
+.eyebrow { font-size: var(--step--1); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 700; }
+.masthead h1 { font-size: var(--step-4); font-weight: 750; letter-spacing: -0.02em; }
+.lede { font-size: var(--step-1); max-width: 62ch; color: var(--fg); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: var(--step--1); color: var(--muted); }
+.facts span { white-space: nowrap; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--step--1); }
+.legend strong { margin-right: 4px; }
+
+/* process chips */
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; padding: 0.12em 0.6em; border-radius: 999px; border: 1px solid; white-space: nowrap; vertical-align: 0.08em; }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.main { color: var(--c-main); background: var(--tint-main); border-color: color-mix(in srgb, var(--c-main) 35%, transparent); }
+.chip.ui { color: var(--c-ui); background: var(--tint-ui); border-color: color-mix(in srgb, var(--c-ui) 35%, transparent); }
+.chip.page { color: var(--c-page); background: var(--tint-page); border-color: color-mix(in srgb, var(--c-page) 35%, transparent); }
+.chip.net { color: var(--c-net); background: var(--tint-net); border-color: color-mix(in srgb, var(--c-net) 35%, transparent); }
+.chip.build { color: var(--c-build); background: var(--tint-build); border-color: color-mix(in srgb, var(--c-build) 35%, transparent); }
+
+/* two-column layout */
+.layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 56px; align-items: start; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); max-height: calc(100vh - 40px); overflow: auto; font-size: var(--step--1); padding-right: 4px; }
+.toc summary { cursor: pointer; font-weight: 700; padding: 10px 0; list-style: none; }
+.toc summary::-webkit-details-marker { display: none; }
+.toc ol { list-style: none; padding: 0; display: grid; gap: 2px; counter-reset: ch; }
+.toc li a { display: grid; grid-template-columns: 2.1em minmax(0, 1fr) auto; gap: 4px; padding: 6px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; line-height: 1.35; }
+.toc li a .n { font-variant-numeric: tabular-nums; color: var(--muted); opacity: 0.8; }
+.toc li a:hover { background: var(--sunken); color: var(--fg); }
+.toc li a.active { background: var(--surface); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
+.toc li a .done { color: var(--c-ui); font-weight: 700; visibility: hidden; }
+.toc li a.is-read .done { visibility: visible; }
+.toc-note { color: var(--muted); margin-top: 14px; padding: 0 8px; }
+
+main { min-width: 0; display: grid; gap: 72px; }
+section.chapter { min-width: 0; max-width: 74ch; }
+.chapter-head { display: grid; gap: 8px; margin-bottom: 22px; }
+.chapter-num { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); letter-spacing: 0.04em; }
+.chapter-intro { font-size: var(--step-1); color: var(--muted); }
+.read-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: var(--step--1); color: var(--muted); margin-top: 28px; cursor: pointer; user-select: none; }
+.read-toggle input { width: 16px; height: 16px; accent-color: var(--c-ui); }
+
+/* callouts */
+.note, .fork, .try, .warn { border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; }
+.note { background: var(--sunken); }
+.fork { background: var(--tint-main); border: 1px solid color-mix(in srgb, var(--c-main) 30%, transparent); }
+.try { background: var(--tint-ui); border: 1px solid color-mix(in srgb, var(--c-ui) 30%, transparent); }
+.warn { background: var(--tint-net); border: 1px solid color-mix(in srgb, var(--c-net) 30%, transparent); }
+.callout-label { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 700; }
+.fork .callout-label { color: var(--c-main); }
+.try .callout-label { color: var(--c-ui); }
+.warn .callout-label { color: var(--c-net); }
+.note .callout-label { color: var(--muted); }
+.note > * , .fork > *, .try > *, .warn > * { margin: 0; }
+.note ul, .fork ul, .try ol, .try ul, .warn ul { padding-left: 1.2em; }
+
+/* tables and code */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.94rem; line-height: 1.5; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--sunken); font-weight: 700; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td code { white-space: nowrap; }
+pre.code { background: var(--sunken); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 0.84rem; line-height: 1.6; border: 1px solid var(--line); }
+pre.code .c { color: var(--muted); }
+.code-label { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-bottom: -0.5em; }
+figure { margin: 0; display: grid; gap: 10px; }
+figure .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+figcaption { font-size: var(--step--1); color: var(--muted); }
+pre.mermaid { margin: 0; font-family: var(--font-body); background: transparent; }
+
+.steps { counter-reset: step; list-style: none; padding: 0 !important; display: grid; gap: 14px; }
+.steps > li { counter-increment: step; display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 10px; margin: 0 !important; }
+.steps > li::before { content: counter(step); font-family: var(--font-mono); font-weight: 600; font-size: 0.9rem; width: 1.9em; height: 1.9em; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+.steps > li > div > * + * { margin-top: 0.4em; }
+
+dl.glossary { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: 12px 22px; }
+dl.glossary dt { font-weight: 700; }
+dl.glossary dd { margin: 0; color: var(--fg); }
+
+.lab-grid { display: grid; gap: 14px; }
+
+@media (max-width: 980px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .toc { position: static; max-height: none; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 4px 12px 10px; }
+  main { gap: 56px; }
+  .masthead { padding-block: 32px 20px; }
+}
+@media (max-width: 560px) {
+  dl.glossary { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  dl.glossary dd { margin-bottom: 12px; }
+}
+</style>
+
+<header class="masthead">
+  <p class="eyebrow">A beginner's guide to the browser in D:\Ashmin-Gold</p>
+  <h1>Inside Min</h1>
+  <p class="lede">Your browser is a fork of Min, built on Electron. This guide explains how it works, from the processes Windows lists in Task Manager down to the line of code that decides whether an ad loads. Read it in order the first time, since each chapter builds on the one before.</p>
+  <p class="facts"><span>Branch <code>chore/agent-handoff</code>, on top of <code>master</code> at <code>5df7cc8b</code></span><span>Electron 45.2.2 (Chromium 156)</span><span>Ghostery adblocker 2.20.1</span><span>Updated 9 November 2026</span></p>
+  <div class="legend" aria-label="Legend: where code runs">
+    <strong>Where the code runs:</strong>
+    <span class="chip main">Main process</span>
+    <span class="chip ui">Browser UI</span>
+    <span class="chip page">Web page</span>
+    <span class="chip net">Network</span>
+    <span class="chip build">Build tools</span>
+  </div>
+</header>
+
+<div class="layout">
+  <details class="toc" id="toc" open>
+    <summary>Chapters</summary>
+    <ol>
+      <li><a href="#made-of"><span class="n">01</span><span>What a browser is made of</span><span class="done">✓</span></a></li>
+      <li><a href="#processes"><span class="n">02</span><span>Processes</span><span class="done">✓</span></a></li>
+      <li><a href="#ipc"><span class="n">03</span><span>How processes talk</span><span class="done">✓</span></a></li>
+      <li><a href="#folders"><span class="n">04</span><span>A tour of the folders</span><span class="done">✓</span></a></li>
+      <li><a href="#startup"><span class="n">05</span><span>Startup, step by step</span><span class="done">✓</span></a></li>
+      <li><a href="#ui"><span class="n">06</span><span>The browser UI</span><span class="done">✓</span></a></li>
+      <li><a href="#page-load"><span class="n">07</span><span>Following one page load</span><span class="done">✓</span></a></li>
+      <li><a href="#preload"><span class="n">08</span><span>Inside the page: preload scripts</span><span class="done">✓</span></a></li>
+      <li><a href="#network"><span class="n">09</span><span>The network layer</span><span class="done">✓</span></a></li>
+      <li><a href="#adblock"><span class="n">10</span><span>Ad blocking</span><span class="done">✓</span></a></li>
+      <li><a href="#permissions"><span class="n">11</span><span>Permissions</span><span class="done">✓</span></a></li>
+      <li><a href="#memory"><span class="n">12</span><span>Memory and the background</span><span class="done">✓</span></a></li>
+      <li><a href="#data"><span class="n">13</span><span>Data and services</span><span class="done">✓</span></a></li>
+      <li><a href="#userscripts"><span class="n">14</span><span>Userscripts</span><span class="done">✓</span></a></li>
+      <li><a href="#build"><span class="n">15</span><span>Building and shipping</span><span class="done">✓</span></a></li>
+      <li><a href="#electron"><span class="n">16</span><span>Keeping Electron current</span><span class="done">✓</span></a></li>
+      <li><a href="#debug"><span class="n">17</span><span>Debugging toolkit</span><span class="done">✓</span></a></li>
+      <li><a href="#extensions"><span class="n">18</span><span>Chrome extensions</span><span class="done">✓</span></a></li>
+      <li><a href="#exercises"><span class="n">19</span><span>Exercises</span><span class="done">✓</span></a></li>
+      <li><a href="#glossary"><span class="n">20</span><span>Glossary</span><span class="done">✓</span></a></li>
+    </ol>
+    <p class="toc-note">Tick "I've read this" at the end of a chapter to mark it here. The ticks are saved in this browser only.</p>
+  </details>
+
+  <main>
+
+<!-- 01 -->
+<section class="chapter prose" id="made-of" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 01</span>
+    <h2>What a browser is made of</h2>
+    <p class="chapter-intro">A browser has two halves. Min only writes one of them.</p>
+  </div>
+  <p>Every browser is split into an <strong>engine</strong> and a <strong>shell</strong>. The engine reads HTML, CSS and JavaScript and turns them into pixels on screen. The shell is everything around the page that you click: tabs, the address bar, history, settings, the download bar, ad blocking.</p>
+  <p>Chrome, Edge, Brave, Opera and Vivaldi all use the same engine, <strong>Chromium</strong>, and differ mostly in their shells. Chromium itself is made of parts you will hear about:</p>
+  <ul>
+    <li><strong>Blink</strong> lays out and draws HTML and CSS.</li>
+    <li><strong>V8</strong> runs JavaScript.</li>
+    <li>The <strong>network stack</strong> downloads everything a page asks for.</li>
+    <li>The <strong>GPU process</strong> sends the finished drawing to your graphics card.</li>
+  </ul>
+  <p><strong>Electron</strong> packages Chromium together with <strong>Node.js</strong> so people can build desktop apps in JavaScript. VS Code, Discord and Slack are Electron apps. Node.js is what lets JavaScript read files, start programs and do other things a web page is never allowed to do.</p>
+  <p><strong>Min</strong> is a shell written on top of Electron. That has a surprising consequence: Min's own interface is a web page. The tab bar and address bar are HTML in <code>index.html</code>, styled with CSS and driven by JavaScript. Websites you visit are shown on top of that page.</p>
+  <p>So working on this browser almost never means touching the engine, which is millions of lines of C++. It means writing JavaScript that tells Chromium what to do through Electron's APIs.</p>
+  <div class="fork">
+    <span class="callout-label">In your fork</span>
+    <p>Upstream Min is written by PalmerAL and others; your repository <code>AshuAmbrose/komin</code> follows it and adds your own work. Your additions are a permission manager, a low-resource mode (memory trimming, memory priority and tab hibernation), the Ghostery ad blocker and Tampermonkey-style userscripts. Chrome extension support followed (Chapter 18). This guide points them out in boxes like this one.</p>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="made-of"> I've read this</label>
+</section>
+
+<!-- 02 -->
+<section class="chapter prose" id="processes" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 02</span>
+    <h2>Processes</h2>
+    <p class="chapter-intro">This is the most important idea in the guide. Everything else follows from it.</p>
+  </div>
+  <p>A <strong>process</strong> is a running program with its own memory. Programs can't read each other's memory. Chromium uses that on purpose: it runs each part of the browser in a separate process, so a crashing tab doesn't take down the browser, and a malicious site can't read your other tabs or your files.</p>
+  <p>Open Task Manager while Min runs and you'll see several <code>Min.exe</code> entries. When I measured a session with one tab open, it looked like this:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Process</th><th>How many</th><th>Code from this repo</th><th>Can use Node.js</th><th>Memory (one tab)</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip main">Main process</span></td><td>1</td><td><code>main.build.js</code>, built from <code>main/</code></td><td>Yes</td><td class="num">90–100 MB</td></tr>
+        <tr><td><span class="chip ui">Browser UI</span></td><td>1 per window</td><td><code>index.html</code> and <code>dist/bundle.js</code>, built from <code>js/</code></td><td>Yes</td><td class="num" rowspan="3">≈300 MB together</td></tr>
+        <tr><td><span class="chip page">Web pages</span></td><td>About 1 per site</td><td>The website's code, plus <code>dist/preload.js</code></td><td>No (sandboxed)</td></tr>
+        <tr><td><span class="chip ui">Places service</span></td><td>1 hidden window</td><td><code>js/places/placesService.html</code></td><td>Yes</td></tr>
+        <tr><td><span class="chip net">GPU, network, audio</span></td><td>A few</td><td>None, Chromium's own</td><td>–</td><td class="num">GPU ≈200–250 MB</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+flowchart LR
+  M["Main process&lt;br/&gt;main.build.js&lt;br/&gt;windows, tabs' views, network hooks, files"]
+  U["Browser UI renderer&lt;br/&gt;index.html + bundle.js&lt;br/&gt;tab bar, address bar"]
+  P1["Web page renderer&lt;br/&gt;youtube.com&lt;br/&gt;+ preload.js"]
+  P2["Web page renderer&lt;br/&gt;reddit.com&lt;br/&gt;+ preload.js"]
+  S["Places service&lt;br/&gt;history search"]
+  G["GPU process"]
+  N["Network service"]
+  U &lt;-->|IPC| M
+  P1 &lt;-->|IPC| M
+  P2 &lt;-->|IPC| M
+  S &lt;-->|IPC| M
+  P1 -.->|draws via| G
+  U -.->|draws via| G
+  M -.->|requests via| N
+    </pre></div>
+    <figcaption>The main process sits in the middle. Renderers never talk to each other directly; they send messages through the main process (IPC, next chapter).</figcaption>
+  </figure>
+
+  <h3>The main process</h3>
+  <p>There is exactly one. It starts first, creates windows, owns every tab's web view, hooks into every network request, reads and writes files, and shows menus. It has full Node.js. If it crashes, the whole browser closes. In Min its code lives in <code>main/</code> and runs as one file, <code>main.build.js</code>.</p>
+
+  <h3>Renderer processes</h3>
+  <p>A <strong>renderer</strong> is a process that shows a web page. Min has two kinds, and the difference between them matters for security:</p>
+  <ul>
+    <li><strong>The browser UI</strong> <span class="chip ui">Browser UI</span> is Min's own page, <code>index.html</code>. Because it's Min's own code, it is trusted and gets Node.js: <code>nodeIntegration: true</code>, <code>contextIsolation: false</code> (see <code>createWindowWithBounds</code> in <code>main/main.js</code>).</li>
+    <li><strong>Website tabs</strong> <span class="chip page">Web page</span> run code from the internet, so they're locked down: <code>sandbox: true</code>, <code>contextIsolation: true</code>, <code>nodeIntegration: false</code> (see <code>getDefaultViewWebPreferences</code> in <code>main/viewManager.js</code>). Chromium also gives each site its own process (<strong>site isolation</strong>). That's why an ad-heavy news site with many ad frames can spawn dozens of processes.</li>
+  </ul>
+  <div class="warn">
+    <span class="callout-label">The one rule never to break</span>
+    <p>Never load a website into a renderer that has Node.js. A web page with Node.js can read your files, run programs and steal saved passwords. Min keeps websites in sandboxed views and its own UI in a separate, trusted view.</p>
+  </div>
+
+  <h3>Preload scripts: the bridge</h3>
+  <p>A sandboxed page can't do anything privileged, but the browser still needs to know things about it: its text (for history search), whether it has a login form, whether it's using the camera. A <strong>preload script</strong> is the answer. It's a script that Electron runs inside the page's renderer <em>before</em> the page's own scripts, with a small extra power: it can send messages to the main process.</p>
+  <p>The preload runs in its own <strong>isolated world</strong>. It sees the same page (the same DOM), but it has its own separate set of JavaScript variables, so the page can't see or change it. The page's own code runs in the <strong>main world</strong>. When a preload needs to change how the page's JavaScript behaves, it has to inject code into the main world, and that code is visible to the page. Chapter 08 covers this in detail.</p>
+  <label class="read-toggle"><input type="checkbox" data-read="processes"> I've read this</label>
+</section>
+
+<!-- 03 -->
+<section class="chapter prose" id="ipc" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 03</span>
+    <h2>How processes talk</h2>
+    <p class="chapter-intro">Processes can't share variables, so they send each other messages. This is called IPC: inter-process communication.</p>
+  </div>
+  <p>An IPC message has a <strong>channel name</strong> (a string like <code>'createView'</code>) and some <strong>data</strong>. The data is copied, not shared, so it can only contain plain values: strings, numbers, arrays, plain objects. Functions, DOM elements and class instances can't be sent.</p>
+
+  <h3>The five routes you'll see in Min</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>From → to</th><th>Sending side</th><th>Receiving side</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip ui">UI</span> → <span class="chip main">Main</span></td><td><code>ipc.send('loadURLInView', {id, url})</code><br>or <code>await ipc.invoke('minimize')</code> to get a reply</td><td><code>ipc.on('loadURLInView', …)</code> in <code>viewManager.js</code><br><code>ipc.handle('minimize', …)</code> in <code>remoteActions.js</code></td></tr>
+        <tr><td><span class="chip main">Main</span> → <span class="chip ui">UI</span></td><td><code>sendIPCToWindow(win, 'updatePermissions', list)</code></td><td><code>ipc.on('updatePermissions', …)</code> in <code>js/navbar/permissionRequests.js</code></td></tr>
+        <tr><td><span class="chip page">Page</span> → <span class="chip ui">UI</span></td><td>Preload: <code>ipcRenderer.send('pageData', {...})</code></td><td>The main process forwards every page message to the UI as <code>view-ipc</code>; the UI handles it with <code>webviews.bindIPC('pageData', fn)</code></td></tr>
+        <tr><td><span class="chip page">Page</span> → <span class="chip main">Main</span></td><td>Preload: <code>ipc.send('inject-cosmetic-filters', url)</code></td><td><code>ipc.on('inject-cosmetic-filters', …)</code> in <code>main/filtering.js</code></td></tr>
+        <tr><td><span class="chip ui">UI</span> → <span class="chip page">Page</span></td><td><code>webviews.callAsync(tabId, 'send', ['getContextMenuData'])</code></td><td>Preload: <code>ipc.on('getContextMenuData', …)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>There are two more styles you'll meet occasionally. <code>ipc.sendSync</code> waits for an answer and freezes the sender while it waits, so it's best avoided. A <code>MessageChannel</code> gives two processes a private pipe after an introduction through the main process; the history service uses one (Chapter 13).</p>
+
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant Page as Web page (preload)
+  participant Main as Main process
+  participant UI as Browser UI
+  Page->>Main: ipcRenderer.send('pageData', text)
+  Main->>UI: view-ipc {id, name: 'pageData', data}
+  Note over UI: webviews.bindIPC('pageData') handler runs
+  UI->>Main: callViewMethod {id, method: 'send', args}
+  Main->>Page: webContents.send('getContextMenuData')
+    </pre></div>
+    <figcaption>A page can't message the UI directly. <code>main/viewManager.js</code> listens to every view's messages and passes them on.</figcaption>
+  </figure>
+
+  <h3><code>callAsync</code>: a remote control for tabs</h3>
+  <p>The UI often needs to ask a tab a question ("can you go back?") or tell it to do something ("reload"). Tabs are objects in the main process, so the UI can't call them directly. <code>webviews.callAsync(tabId, method, args, callback)</code> sends <code>callViewMethod</code> to the main process, which calls that method on the tab's <code>webContents</code> and sends the result back as <code>async-call-result</code>.</p>
+  <pre class="code"><span class="c">// js/navbar/navigationButtons.js: is the back button enabled?</span>
+webviews.callAsync(tabs.getSelected(), 'canGoBack', function (err, canGoBack) {
+  if (!err) backButton.disabled = !canGoBack
+})</pre>
+  <div class="note">
+    <span class="callout-label">Tip</span>
+    <p>Every message has a sender and a receiver that share a channel name. To find the other end of any message, search the whole project for its name, for example <code>set-window-title</code>.</p>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="ipc"> I've read this</label>
+</section>
+
+<!-- 04 -->
+<section class="chapter prose" id="folders" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 04</span>
+    <h2>A tour of the folders</h2>
+    <p class="chapter-intro">Now that you know the processes, the folder layout makes sense: mostly, each folder belongs to one process.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Path</th><th>Runs in</th><th>What's inside</th></tr></thead>
+      <tbody>
+        <tr><td><code>main/</code></td><td><span class="chip main">Main</span></td><td>21 files: windows (<code>windowManagement.js</code>), tab views (<code>viewManager.js</code>), ad blocking (<code>filtering.js</code>), permissions, downloads, menus, user agent, the <code>min://</code> protocol, and userscripts (<code>userscripts.js</code>, <code>userscriptAPI.js</code>, <code>userscriptInstall.js</code>).</td></tr>
+        <tr><td><code>index.html</code></td><td><span class="chip ui">UI</span></td><td>The browser interface's HTML: tab bar, address bar, task overlay, dialogs.</td></tr>
+        <tr><td><code>js/</code></td><td><span class="chip ui">UI</span></td><td>The interface's logic. Entry point <code>js/default.js</code>; bundled into <code>dist/bundle.js</code>.</td></tr>
+        <tr><td><code>js/preload/</code></td><td><span class="chip page">Page</span></td><td>Scripts that run inside every tab; combined into <code>dist/preload.js</code>.</td></tr>
+        <tr><td><code>js/places/</code></td><td><span class="chip ui">Places + UI</span></td><td>History, bookmarks and full-text search.</td></tr>
+        <tr><td><code>css/</code></td><td><span class="chip ui">UI</span></td><td>The interface's styles; combined into <code>dist/bundle.css</code>.</td></tr>
+        <tr><td><code>pages/</code>, <code>reader/</code></td><td><span class="chip page">Page</span></td><td>Internal pages at <code>min://app/...</code>: settings, error page, new tab, PDF viewer, reader view, translation service, prompt dialog, and the userscript install page.</td></tr>
+        <tr><td><code>test/</code></td><td><span class="chip build">Build</span></td><td>Unit tests (<code>npm run test:unit</code>) and a demo userscript for trying things by hand. Left out of the installer.</td></tr>
+        <tr><td><code>ext/</code></td><td>Various</td><td>Third-party code and data: filter lists, Mozilla Readability, the public suffix list, the HTTPS upgrade list, the <code>franc</code> language detector, <code>trimMemory.exe</code>.</td></tr>
+        <tr><td><code>localization/</code></td><td>Everywhere</td><td>Translations, one JSON file per language. Code shows text with <code>l('newTabLabel')</code>.</td></tr>
+        <tr><td><code>scripts/</code></td><td><span class="chip build">Build</span></td><td>Build and packaging scripts.</td></tr>
+        <tr><td><code>dist/</code>, <code>main.build.js</code></td><td>Generated</td><td>Output of <code>npm run build</code>. Never edit these; your changes are overwritten on the next build. They're in <code>.gitignore</code>.</td></tr>
+        <tr><td><code>node_modules/</code></td><td>–</td><td>Installed packages, including <code>electron</code> and <code>@ghostery/adblocker-electron</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The surprise in <code>main/</code></h3>
+  <p>In most Node.js projects, each file is a module with <code>require</code> and <code>module.exports</code>. Min's main-process files are different: <code>scripts/buildMain.js</code> glues them together, in a fixed order, into one big file, <code>main.build.js</code>. Everything declared at the top of one file is visible in all the others. That's why <code>viewManager.js</code> can call <code>sendIPCToWindow</code> (defined in <code>main.js</code>) and <code>windows</code> (defined in <code>windowManagement.js</code>) without importing them.</p>
+  <ul>
+    <li>Order matters for code that runs immediately at load time, but not for code inside functions that runs later.</li>
+    <li>The lint check (<code>npm test</code>) doesn't know about the gluing, so it reports hundreds of "<code>X</code> is not defined" errors that aren't real.</li>
+    <li>Your fork's code often writes <code>typeof isTabActiveWithMedia === 'function'</code> before calling a function from another file. That guard does nothing in the real bundle, but it's harmless.</li>
+  </ul>
+  <p>The browser UI code in <code>js/</code> is different again: it <em>does</em> use <code>require</code>, and the tool <strong>browserify</strong> bundles it. Its paths are relative to <code>js/</code>, so you'll see <code>require('tabState.js')</code> without a <code>js/</code> prefix.</p>
+  <label class="read-toggle"><input type="checkbox" data-read="folders"> I've read this</label>
+</section>
+
+<!-- 05 -->
+<section class="chapter prose" id="startup" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 05</span>
+    <h2>Startup, step by step</h2>
+    <p class="chapter-intro">What happens between double-clicking Min and seeing your tabs.</p>
+  </div>
+  <ol class="steps">
+    <li><div><p><strong>Electron starts the main process.</strong> It reads <code>"main": "main.build.js"</code> from <code>package.json</code> and runs that file. In development you start this with <code>npm start</code>, which builds everything and runs <code>electron . --development-mode</code>.</p></div></li>
+    <li><div><p><strong>Top-level code in <code>main/main.js</code> runs.</strong> In order:</p>
+      <ul>
+        <li>the crash reporter starts (local only, nothing is uploaded);</li>
+        <li>Windows installer events are handled: on install, <code>registryConfig.js</code> registers Min as a browser with Windows;</li>
+        <li>the profile folder is chosen, with <code>-development</code> added in development mode;</li>
+        <li><code>settings.json</code> is read;</li>
+        <li>Chromium options are set, such as <code>--js-flags=--optimize-for-size</code> (only if it's turned on in Settings → Performance, Chapter 12, which is why this comes after reading the settings);</li>
+        <li>the language is chosen;</li>
+        <li><code>requestSingleInstanceLock</code> runs: if Min is already open, this second copy hands over its links and quits.</li>
+      </ul></div></li>
+    <li><div><p><strong>Electron fires <code>app.on('ready')</code>.</strong> Min registers the <code>min://</code> protocol (<code>registerBundleProtocol</code>) and calls <code>createWindow()</code>.</p></div></li>
+    <li><div><p><strong>The window is built</strong> (<code>createWindowWithBounds</code>). It reads the last size and position from <code>windowBounds.json</code>, creates a frameless <code>BaseWindow</code>, and puts one <code>WebContentsView</code> inside it for the UI. That view loads <code>min://app/index.html</code> and gets startup arguments such as <code>--user-data-path</code> and <code>--window-id</code>.</p></div></li>
+    <li><div><p><strong>The UI page starts.</strong> <code>index.html</code> loads <code>dist/bundle.js</code>, which runs <code>js/default.js</code>. It reads the arguments into <code>window.globalArgs</code>, creates globals like <code>ipc</code>, then requires each feature module and calls its <code>initialize()</code>.</p></div></li>
+    <li><div><p><strong>Your tabs come back.</strong> The last line of <code>default.js</code> calls <code>sessionRestore.restore()</code>, which reads <code>sessionRestore.json</code> and rebuilds your tasks and tabs. Only the selected tab loads straight away.</p></div></li>
+    <li><div><p><strong>Background helpers start.</strong> The main process opens a hidden window for history search (<code>placesService.html</code>), and the ad-blocking engine loads from its cache file.</p></div></li>
+  </ol>
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant E as Electron
+  participant M as Main process
+  participant W as Window + UI view
+  participant UI as UI code (default.js)
+  E->>M: run main.build.js
+  M->>M: settings, profile folder, single-instance lock
+  E->>M: app ready
+  M->>W: BaseWindow + WebContentsView
+  W->>UI: load min://app/index.html
+  UI->>UI: initialize every module
+  UI->>UI: sessionRestore.restore()
+  UI->>M: createView / setView for the selected tab
+    </pre></div>
+    <figcaption>The UI decides which tabs exist; the main process creates their views when the UI asks.</figcaption>
+  </figure>
+  <h3>Two helpers you'll see everywhere</h3>
+  <ul>
+    <li><code>getWindowWebContents(win)</code> returns the UI page of a window (the first child view).</li>
+    <li><code>sendIPCToWindow(win, channel, data)</code> sends a message to that window's UI. If the UI is still loading it waits for it, and it skips windows that have been closed.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="startup"> I've read this</label>
+</section>
+
+<!-- 06 -->
+<section class="chapter prose" id="ui" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 06</span>
+    <h2>The browser UI</h2>
+    <p class="chapter-intro">Tabs, tasks, the address bar and the suggestion list. All of this code runs in the UI renderer.</p>
+  </div>
+
+  <h3>The trick with screenshots</h3>
+  <p>Each website is a native view drawn <em>on top of</em> the UI page, and HTML can never be drawn above a native view. So when Min needs HTML to cover the page (the address-bar dropdown, the task overview), it takes a screenshot of the page, hides the real view, and shows the screenshot in its place. That's what <code>webviews.requestPlaceholder(reason)</code> and <code>webviews.hidePlaceholder(reason)</code> do. If you ever notice that the page looks frozen while the address bar is open, this is why.</p>
+
+  <h3>The data model: tasks contain tabs</h3>
+  <p>Min groups tabs into <strong>tasks</strong> (other browsers call them tab groups or workspaces). The code in <code>js/tabState/</code> keeps this in two global objects:</p>
+  <ul>
+    <li><code>tasks</code> is a <code>TaskList</code>, every task you have.</li>
+    <li><code>tabs</code> is the <code>TabList</code> of the task that's currently selected.</li>
+  </ul>
+  <p>A tab is a plain object with fields such as <code>id</code>, <code>url</code>, <code>title</code>, <code>private</code>, <code>loaded</code>, <code>muted</code>, <code>hasAudio</code>, <code>scrollPosition</code> and <code>previewImage</code>. A task has <code>id</code>, <code>name</code>, <code>tabs</code> and <code>tabHistory</code> (for reopening closed tabs).</p>
+  <pre class="code"><span class="c">// read and change tabs (try this in the UI's DevTools console, Chapter 15)</span>
+tabs.get()                                <span class="c">// copies of all tabs in this task</span>
+tabs.get(tabs.getSelected()).url          <span class="c">// the selected tab's address</span>
+tabs.update(tabs.getSelected(), { muted: true }) <span class="c">// changes the icon only; see Exercise 1</span>
+tasks.on('tab-updated', function (id, key) { console.log(id, key) })</pre>
+  <ul>
+    <li><code>get()</code> returns <em>copies</em>, so editing the object you got back changes nothing. Always change tabs with <code>update()</code>.</li>
+    <li>Every change fires an event (<code>tab-added</code>, <code>tab-updated</code>, <code>tab-selected</code>, <code>tab-destroyed</code> and the task versions of these). Listeners run together a moment later, not immediately.</li>
+    <li><code>js/sessionRestore.js</code> saves this model to <code>sessionRestore.json</code> every 30 seconds, leaving private tabs out.</li>
+    <li>With several windows open, <code>js/windowSync.js</code> forwards every event through the main process so all windows agree.</li>
+  </ul>
+
+  <h3>Changing tabs: <code>js/browserUI.js</code></h3>
+  <p><code>addTab</code>, <code>closeTab</code>, <code>switchToTab</code>, <code>addTask</code> and <code>switchToTask</code> live here. Each one changes three things together: the data model (<code>tabs</code>/<code>tasks</code>), the tab bar's HTML (<code>tabBar</code>) and the native views (<code>webviews</code>). If you add a feature that changes tabs, go through these functions, or the three will get out of step.</p>
+
+  <h3>The UI's remote control for views: <code>js/webviews.js</code></h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>UI calls</th><th>Message to main</th><th>Main does</th></tr></thead>
+      <tbody>
+        <tr><td><code>webviews.add(tabId)</code></td><td><code>createView</code></td><td>Creates a <code>WebContentsView</code> with the preload and sandbox settings</td></tr>
+        <tr><td><code>webviews.setSelected(tabId)</code></td><td><code>setView</code></td><td>Puts that view in the window and removes the previous one</td></tr>
+        <tr><td><code>webviews.update(tabId, url)</code></td><td><code>loadURLInView</code></td><td><code>webContents.loadURL(url)</code></td></tr>
+        <tr><td><code>webviews.destroy(tabId)</code></td><td><code>destroyView</code></td><td>Closes the view and frees its memory</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>In the other direction, the UI listens to page events with <code>webviews.bindEvent('page-title-updated', fn)</code> (the main process forwards them as <code>view-event</code>) and to preload messages with <code>webviews.bindIPC(name, fn)</code>.</p>
+
+  <h3>The top bar: <code>js/navbar/</code></h3>
+  <ul>
+    <li><code>tabBar.js</code> draws the tabs and handles drag-to-reorder.</li>
+    <li><code>tabEditor.js</code> is the address bar.</li>
+    <li><code>navigationButtons.js</code> is Back and Forward.</li>
+    <li><code>progressBar.js</code> shows the loading bar, but only for pages that take longer than 4 seconds.</li>
+    <li><code>tabColor.js</code> tints the bar from the site's icon or theme color. A tiny neural network in <code>ext/textColor</code> picks light or dark text so it stays readable.</li>
+    <li><code>tabActivity.js</code> fades tabs you haven't used for about five minutes.</li>
+    <li><code>contentBlockingToggle.js</code> is the shield button that turns ad blocking off for one site.</li>
+    <li><code>permissionRequests.js</code> is the permission bar and tab icons. <span class="chip main">your fork</span></li>
+  </ul>
+
+  <h3>Suggestions while you type: <code>js/searchbar/</code></h3>
+  <p>The suggestion list is built from <strong>plugins</strong>. On each keystroke, <code>searchbar.showResults</code> asks every plugin whether it wants to answer (its <code>trigger(text)</code> function). Plugins that answer add rows with <code>searchbarPlugins.addResult</code>. A plugin's <code>index</code> decides where its rows appear, and duplicate addresses are dropped.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Position</th><th>Plugins</th></tr></thead>
+      <tbody>
+        <tr><td class="num">0</td><td>Development-mode notice, "restore task"</td></tr>
+        <tr><td class="num">1</td><td>History and bookmarks (up to 4), <code>!bang</code> shortcuts, calculator, place suggestions</td></tr>
+        <tr><td class="num">2</td><td>Full-text history search (matches words inside pages you visited)</td></tr>
+        <tr><td class="num">4</td><td>DuckDuckGo instant answers, search-engine suggestions (off in private tabs)</td></tr>
+        <tr><td class="num">10–11</td><td>Shortcut buttons, update notice</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Everything else</h3>
+  <ul>
+    <li><code>js/taskOverlay/</code> is the task overview screen.</li>
+    <li><code>js/keybindings.js</code> and <code>js/defaultKeybindings.js</code> handle keyboard shortcuts. Each shortcut has a name in <code>js/util/keyMap.js</code> (for example <code>addTab: 'mod+t'</code>, where <code>mod</code> means Ctrl on Windows), and users can remap them.</li>
+    <li><code>js/webviewMenu.js</code> is the right-click menu on pages. It asks the page's preload for details (is this a link? an image?) before showing a native menu.</li>
+    <li>The smaller modules are <code>js/findinpage.js</code> (Ctrl+F), <code>js/focusMode.js</code>, <code>js/windowControls.js</code> (the minimize, maximize and close buttons on Windows) and <code>js/util/urlParser.js</code>. The last one decides whether what you typed is an address or a search, and upgrades well-known sites to HTTPS.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="ui"> I've read this</label>
+</section>
+
+<!-- 07 -->
+<section class="chapter prose" id="page-load" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 07</span>
+    <h2>Following one page load</h2>
+    <p class="chapter-intro">You type an address and press Enter. Here is every step, with the file that handles it.</p>
+  </div>
+  <ol class="steps">
+    <li><div><p><span class="chip ui">UI</span> <code>js/navbar/tabEditor.js</code> sees Enter and calls <code>searchbar.openURL</code>. If you typed a <code>!bang</code>, its handler takes over. Otherwise the searchbar emits <code>url-selected</code>.</p></div></li>
+    <li><div><p><span class="chip ui">UI</span> <code>js/browserUI.js</code> hears <code>url-selected</code> and calls <code>webviews.update(tabId, url)</code>. <code>urlParser.parse</code> turns <code>example.com</code> into <code>https://example.com</code>, or turns plain words into a search address.</p></div></li>
+    <li><div><p><span class="chip main">Main</span> The message <code>loadURLInView</code> reaches <code>main/viewManager.js</code>, which calls <code>webContents.loadURL(url)</code> on that tab's view.</p></div></li>
+    <li><div><p><span class="chip net">Network</span> Chromium requests the page, and then its scripts, images and so on. For <em>every</em> request, Min's hooks run in the main process: <code>filtering.js</code> removes tracking parameters and blocks ads, <code>UASwitcher.js</code> adjusts the browser identity it reports, and <code>download.js</code> checks the response (is it a PDF? a download?).</p></div></li>
+    <li><div><p><span class="chip page">Page</span> A renderer starts for the site, and <code>dist/preload.js</code> runs before the site's own scripts. Among other things it asks the main process for the ad blocker's hiding rules for this site.</p></div></li>
+    <li><div><p><span class="chip ui">UI</span> Page events flow back as the page loads: <code>did-start-loading</code>, <code>did-navigate</code>, <code>page-title-updated</code>. <code>webviews.js</code> passes each one to its listeners, which call <code>tabs.update(id, {url, title})</code>. That fires <code>tab-updated</code>, so the tab bar redraws the title and <code>setWindowTitle</code> updates the window title.</p></div></li>
+    <li><div><p><span class="chip page">Page</span> After loading, the preload sends the page's text (<code>pageData</code>) so it can be searched in history later. It also sends whether reader view would work (<code>canReader</code>). The UI captures a screenshot for the tab preview.</p></div></li>
+  </ol>
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant UI as Browser UI
+  participant M as Main process
+  participant N as Network
+  participant P as Page + preload
+  UI->>M: loadURLInView {id, url}
+  M->>N: webContents.loadURL(url)
+  N->>M: onBeforeRequest (block? strip tracking?)
+  M->>N: allow / cancel / redirect
+  N->>P: HTML, scripts, images
+  P->>M: inject-cosmetic-filters (preload)
+  M->>P: hiding CSS + scriptlets
+  M->>UI: view-event did-navigate, page-title-updated
+  UI->>UI: tabs.update() then tab bar redraws
+  P->>M: pageData (page text)
+  M->>UI: view-ipc pageData, saved to history
+    </pre></div>
+    <figcaption>One address, three processes, about a dozen messages.</figcaption>
+  </figure>
+  <label class="read-toggle"><input type="checkbox" data-read="page-load"> I've read this</label>
+</section>
+
+<!-- 08 -->
+<section class="chapter prose" id="preload" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 08</span>
+    <h2>Inside the page: preload scripts</h2>
+    <p class="chapter-intro">The only Min code that runs inside websites.</p>
+  </div>
+  <p><code>scripts/buildPreload.js</code> joins these files into <code>dist/preload.js</code>, and <code>viewManager.js</code> attaches it to every tab with <code>preload: __dirname + '/dist/preload.js'</code>. Because <code>nodeIntegrationInSubFrames</code> is on, it also runs inside every iframe. That's why many of these scripts check <code>window === window.top</code> first.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>default.js</code></td><td>Asks for the ad blocker's hiding rules, forwards scrolling and swipe gestures, helps the right-click menu, and relays messages from <code>min://</code> pages.</td></tr>
+        <tr><td><code>textExtractor.js</code></td><td>Collects the visible text of the page (up to 300,000 characters) for full-text history search.</td></tr>
+        <tr><td><code>readerDetector.js</code></td><td>Guesses whether the page is an article that reader view could show.</td></tr>
+        <tr><td><code>siteUnbreak.js</code></td><td>Small fixes for specific sites (Google, Drive, Meet, YouTube's title), plus a WebSocket counter used by hibernation.</td></tr>
+        <tr><td><code>mediaTracker.js</code></td><td>Notices when the page starts or stops using the camera, microphone or screen sharing. <span class="chip main">your fork</span></td></tr>
+        <tr><td><code>userscripts.js</code></td><td>Asks for the userscripts that match this frame before the page's own scripts start, and runs them with their Greasemonkey functions (Chapter 14). <span class="chip main">your fork</span></td></tr>
+        <tr><td><code>passwordFill.js</code></td><td>Finds login forms, offers saved passwords, and offers to save new ones.</td></tr>
+        <tr><td><code>translate.js</code></td><td>Collects text for page translation and puts the translation back.</td></tr>
+        <tr><td><code>settingsPreload.js</code></td><td>Lets the <code>min://</code> settings page read and change settings, and only that page.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The two worlds</h3>
+  <p>The preload runs in an isolated world: same DOM, separate JavaScript variables. A site can't change the preload's functions. Sometimes, though, Min has to change how the <em>site's</em> JavaScript behaves. Examples are replacing <code>window.WebSocket</code> to count connections, wrapping <code>getUserMedia</code> to notice camera use, and the ad blocker's scriptlets. That code must be injected into the site's main world with <code>webFrame.executeJavaScript</code>.</p>
+  <div class="warn">
+    <span class="callout-label">Know the limits of main-world code</span>
+    <p>Anything injected into the main world can be seen and undone by the site. That's fine for site fixes and ad blocking, but don't rely on it for security. For example, the camera indicator from <code>mediaTracker.js</code> is best-effort: a hostile page could read its secret token and send fake "stopped" messages.</p>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="preload"> I've read this</label>
+</section>
+
+<!-- 09 -->
+<section class="chapter prose" id="network" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 09</span>
+    <h2>The network layer</h2>
+    <p class="chapter-intro">Every request any tab makes passes through hooks in the main process.</p>
+  </div>
+  <p>Electron gives each <strong>session</strong> (a set of cookies, cache and storage; normal tabs share one, each private tab gets its own) a <code>webRequest</code> object with hooks for each stage of a request. Min uses four:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hook</th><th>File</th><th>What Min does there</th></tr></thead>
+      <tbody>
+        <tr><td><code>onBeforeRequest</code></td><td><code>main/filtering.js</code></td><td>Removes tracking parameters like <code>utm_source</code> and <code>fbclid</code> from addresses; blocks ads and trackers; optionally blocks all scripts or images.</td></tr>
+        <tr><td><code>onBeforeSendHeaders</code></td><td><code>main/UASwitcher.js</code></td><td>Sends a Firefox identity to Google's sign-in page, because Google refuses sign-in from unfamiliar Chromium browsers. Sets the Client Hints headers for other sites.</td></tr>
+        <tr><td><code>onHeadersReceived</code></td><td><code>main/download.js</code></td><td>Sends PDFs to Min's viewer; marks files versus pages; lets reader and PDF pages read the documents they show; adds the ad blocker's CSP rules.</td></tr>
+        <tr><td><code>onBeforeRedirect</code></td><td><code>main/download.js</code></td><td>Remembers redirects so downloads get the right name.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <span class="callout-label">Why CSP code sits in download.js</span>
+    <p>Electron allows only one listener per hook per session. Since <code>download.js</code> already owns <code>onHeadersReceived</code>, the ad blocker's header changes are applied from there, through <code>applyFilteringCSPHeaders</code>.</p>
+  </div>
+  <p>These hooks also decide whether extensions can filter requests. As long as any of them is there, Electron switches off request filtering for every extension in that session, so uBlock Origin Lite would block nothing. When you let such an extension take over, Min removes all four from normal tabs and does their other jobs another way (Chapter 18).</p>
+  <label class="read-toggle"><input type="checkbox" data-read="network"> I've read this</label>
+</section>
+
+<!-- 10 -->
+<section class="chapter prose" id="adblock" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 10</span>
+    <h2>Ad blocking</h2>
+    <p class="chapter-intro">The part of the browser you've worked on most. It reuses uBlock Origin's rules and Ghostery's engine instead of writing a blocker from scratch.</p>
+  </div>
+
+  <h3>Filter lists: the rules</h3>
+  <p>Ad blockers don't know what an ad is. They follow <strong>filter lists</strong>: big text files of rules maintained by volunteers (EasyList, uBlock Origin's lists). There are three kinds of rule, and each needs a different mechanism:</p>
+  <pre class="code"><span class="c">! 1. network rule: don't download anything from this domain</span>
+||doubleclick.net^
+<span class="c">! 2. cosmetic rule: hide matching elements on youtube.com</span>
+youtube.com##ytd-ad-slot-renderer
+<span class="c">! 3. scriptlet rule: run a small script on youtube.com that</span>
+<span class="c">!    removes ad data before YouTube's player reads it</span>
+youtube.com##+js(set-constant, ytInitialPlayerResponse.playerAds, undefined)</pre>
+
+  <h3>The engine: <code>@ghostery/adblocker</code></h3>
+  <p>Ghostery's library reads about 6 MB of list text and compiles it into a structure that can answer "block this request?" in microseconds. I measured it in your setup:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Step</th><th>Cost</th><th>How often</th></tr></thead>
+      <tbody>
+        <tr><td>Download the 16 lists</td><td class="num">≈6 MB</td><td>Every 2 days</td></tr>
+        <tr><td>Build the engine from the text</td><td class="num">≈1.2 s</td><td>Every 2 days (a brief hitch)</td></tr>
+        <tr><td>Load the saved engine at startup</td><td class="num">17 ms</td><td>Every launch</td></tr>
+        <tr><td>Memory held in the main process</td><td class="num">≈15 MB</td><td>Always</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The engine's life cycle in <code>main/filtering.js</code></h3>
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A["initFilterList()"] --> B{"adblocker-engine-v2.bin&lt;br/&gt;in the profile folder?"}
+  B -->|yes| C["Load it: 17 ms&lt;br/&gt;schedule refresh when 2 days old"]
+  B -->|no or unreadable| D["fromLists(fetch, ADBLOCKER_LISTS)&lt;br/&gt;download + build, save to cache"]
+  D -->|offline| E["Build from bundled EasyList&lt;br/&gt;retry download in 1 hour"]
+  C --> F["Engine ready"]
+  D --> F
+  E --> F
+  F --> G["scheduleAdblockerUpdate():&lt;br/&gt;re-download in the background"]
+    </pre></div>
+    <figcaption><code>ADBLOCKER_LISTS</code> holds the official EasyList and uBlock Origin addresses. Each January, uBlock Origin starts a new <code>filters-&lt;year&gt;.txt</code>, which needs adding to that list.</figcaption>
+  </figure>
+
+  <h3>Network blocking</h3>
+  <p><code>handleRequest</code> runs for every request:</p>
+  <ul>
+    <li>It works out which site is asking (<code>details.initiator</code>).</li>
+    <li>It skips sites you've excepted with the shield button.</li>
+    <li>It strips tracking parameters.</li>
+    <li>It asks the engine with <code>adblockerEngine.match(request)</code>. The answer is either "cancel" (the request fails with <code>ERR_BLOCKED_BY_CLIENT</code>) or "redirect" to a harmless empty file.</li>
+  </ul>
+  <p>Min's original filter parser still runs as well, for Min's own few rules and any you put in <code>customFilters.txt</code> in the profile folder.</p>
+
+  <h3>Hiding elements and running scriptlets</h3>
+  <p>When a page starts, <code>js/preload/default.js</code> sends <code>inject-cosmetic-filters</code>. The main process (<code>injectCosmeticFiltersForSender</code>) asks the engine for the rules for that site:</p>
+  <ul>
+    <li><strong>CSS rules</strong> are inserted with <code>insertCSS(..., {cssOrigin: 'user'})</code>, so they beat the site's own styles.</li>
+    <li><strong>Scriptlets</strong> are run in the page's main world.</li>
+  </ul>
+
+  <h3>The YouTube bug, and why the wrapper exists</h3>
+  <p>YouTube gets about 34 scriptlets. Each one arrives bundled with its own copy of uBlock Origin's helper functions (such as <code>proxyApplyFn</code> and <code>safeSelf</code>). uBlock Origin itself runs all scriptlets together, sharing one copy of the helpers. Ghostery's built-in injector (<code>onInjectCosmeticFilters</code>) instead runs each one as a separate top-level script. Here's what went wrong:</p>
+  <ol>
+    <li>Each new copy of <code>proxyApplyFn</code> replaced the global one.</li>
+    <li>The first copy's wrapper around <code>Function.prototype.toString</code> then read the <em>last</em> copy's settings, which pointed back at itself.</li>
+    <li>Calling <code>toString</code> on any function now recursed forever.</li>
+    <li>YouTube's page code converts functions to text while building its components, so the components crashed. You saw search results without views or dates, and Shorts that never built a player.</li>
+  </ol>
+  <p class="code-label">main/filtering.js</p>
+  <pre class="code"><span class="c">// each scriptlet runs in its own function, so its helper copies can't overwrite the others,
+// but all of them get the same scriptletGlobals object, as they would in uBlock Origin</span>
+const combined = '(() => {\nconst minScriptletGlobals = {};\n' + scripts.map(function (s) {
+  return '((scriptletGlobals) => {\ntry {\n' + s + '\n} catch (e) {}\n})(minScriptletGlobals);'
+}).join('\n') + '\n})();'
+sender.executeJavaScript(combined)</pre>
+  <p>Sharing <code>scriptletGlobals</code> matters too. Ghostery 2.20 uses it to let every scriptlet reuse the first snapshot of the browser's real functions. Without it, YouTube's six <code>JSON.stringify</code> scriptlets each wrapped the previous one, and every call ran 2⁶ = 64 times. With it, it runs 7 times.</p>
+
+  <h3>What blocking costs and saves</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Page (one tab, dev build)</th><th>Blocking</th><th>Memory</th><th>Processes</th><th>CPU while idle (25 s)</th></tr></thead>
+      <tbody>
+        <tr><td>Times of India</td><td>off</td><td class="num">1,609 MB</td><td class="num">39</td><td class="num">26.3 s</td></tr>
+        <tr><td>Times of India</td><td>on</td><td class="num">624 MB</td><td class="num">8</td><td class="num">10.8 s</td></tr>
+        <tr><td>YouTube search</td><td>off</td><td class="num">671 MB</td><td class="num">10</td><td class="num">0.1 s</td></tr>
+        <tr><td>YouTube search</td><td>on</td><td class="num">705 MB</td><td class="num">9</td><td class="num">0.7 s</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Compared with uBlock Origin</h3>
+  <p>Is Min's own blocker as good as the famous extension? On 7 November each setup ran in a brand-new profile on five ad-heavy sites (Times of India, Hindustan Times, NDTV, CNN, Allrecipes) and three YouTube videos, twice, taking turns so that time of day and the network hit every setup alike. The script is <code>test/e2e/measure-ad-blockers.js</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>No blocking</th><th>Min's blocker</th><th>uBO Lite</th><th>Full uBO</th></tr></thead>
+      <tbody>
+        <tr><td>Ad and tracker requests that got through</td><td class="num">958–1,223</td><td class="num">0–1</td><td class="num">0–1</td><td class="num">0</td></tr>
+        <tr><td>Ad spaces still visible</td><td class="num">16–23</td><td class="num">9</td><td class="num">8</td><td class="num">0</td></tr>
+        <tr><td>Processor time to load the five sites</td><td class="num">270–389 s</td><td class="num">65 s</td><td class="num">55–59 s</td><td class="num">66–69 s</td></tr>
+        <tr><td>Processor time per idle minute, sites open</td><td class="num">15–17 s</td><td class="num">5.5 s</td><td class="num">2.5 s</td><td class="num">6–7 s</td></tr>
+        <tr><td>Memory with the sites open</td><td class="num">4.3–5.7 GB</td><td class="num">1.4 GB</td><td class="num">1.3 GB</td><td class="num">1.4 GB</td></tr>
+        <tr><td>Starting again, already set up</td><td class="num">–</td><td class="num">0.8 s, 275 MB</td><td class="num">4 s, 308 MB</td><td class="num">53 s, 3 GB</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Min's blocker and uBlock Origin Lite block about equally.</strong> uBO Lite is a little lighter while pages are open (Chromium matches its rules itself, and its background worker sleeps); Min's blocker starts faster.</li>
+    <li><strong>Full uBlock Origin hides the most but doesn't work well in Min.</strong> Its storage (IndexedDB) fails in Electron's old-style extension pages, so it rewrites hundreds of megabytes of lists at every start. It's also an old-style (Manifest V2) extension, and a copy loaded from a folder never updates. Since 9 November Min refuses Manifest V2 extensions altogether (Chapter 18), so the comparison now runs the other three setups.</li>
+    <li><strong>YouTube didn't give a clear answer</strong>: the screen was locked during the test, and a locked screen draws nothing, so nobody could see whether an ad actually played. That part needs doing again.</li>
+    <li>adblock-tester.com gave every setup 65 out of 100, even with no blocking at all, so its score means nothing here.</li>
+  </ul>
+  <p>The decision: Min's blocker stays the default, and uBO Lite is a good alternative for anyone who prefers it (Chapter 18).</p>
+
+  <h3>Known limits</h3>
+  <ul>
+    <li><strong>A bug found and fixed on 9 November:</strong> on a brand-new profile's very first start, Min tried to download the block lists before Electron was ready, failed, and used only the small built-in list for the first hour. Every new user started that way. Now the download waits until Electron is ready (<code>app.whenReady()</code> in <code>fetchAdblockerList</code>), and the full lists arrive about 2 seconds after the first start. The test suite <code>adblock-first-start</code> checks it.</li>
+    <li>Scriptlets arrive after a round trip through the main process, so the site's own scripts have already started. On a freshly loaded or restored YouTube tab, the first ad can slip through.</li>
+    <li>Sometimes a video sits on a spinner for about as long as the ad would have run. This is probably YouTube's own delay for ad-blocker users.</li>
+    <li>Ghostery's "redirect to an empty file" uses <code>data:</code> addresses, which Chromium refuses (<code>ERR_UNSAFE_REDIRECT</code>). Those requests simply fail.</li>
+    <li>When an ad-blocking extension takes over normal tabs (Chapter 18), everything in this chapter applies to private tabs only.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="adblock"> I've read this</label>
+</section>
+
+<!-- 11 -->
+<section class="chapter prose" id="permissions" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 11</span>
+    <h2>Permissions</h2>
+    <p class="chapter-intro">How a site asks for your camera, and how your answer is remembered. Most of this is your own work.</p>
+  </div>
+  <p>Sites must ask before using the camera or microphone (<code>media</code>), showing notifications, capturing the mouse pointer (<code>pointerLock</code>) or sharing your screen (<code>display-capture</code>). Full screen and copying to the clipboard are always allowed. Electron hands these decisions to Min through three hooks, all set up in <code>main/permissionManager.js</code>:</p>
+  <ul>
+    <li><code>setPermissionRequestHandler</code>: a site is <em>asking</em>. Min may need to show a prompt.</li>
+    <li><code>setPermissionCheckHandler</code>: a site is <em>checking</em> quietly (for example reading <code>Notification.permission</code>). Min must answer straight away, without a prompt.</li>
+    <li><code>setDisplayMediaRequestHandler</code>: a site wants to share the screen. Min lists screens and windows with <code>desktopCapturer.getSources</code> and lets you pick one. On Windows it can include system audio.</li>
+  </ul>
+  <figure>
+    <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant S as Site
+  participant M as permissionManager.js
+  participant UI as permissionRequests.js
+  S->>M: request 'media' (camera)
+  M->>M: blocked for this site? granted before?
+  M->>UI: updatePermissions (pending request)
+  UI->>UI: show the permission bar
+  UI->>M: permissionGranted {permissionId, persist}
+  M->>S: callback(true)
+  M->>M: save to settings.sitePermissions
+    </pre></div>
+    <figcaption>If the site was already allowed or blocked, Min answers immediately and the bar never appears.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Saved answers</strong> live in <code>settings.json</code> under <code>sitePermissions</code>, keyed by site name, for example <code>{"example.com": {"media:video": "allow", "notifications": "block"}}</code>. Private tabs never save.</li>
+    <li><strong>"Allow for this session" answers</strong> are kept in memory, tagged with the session they were given in, so private tabs and normal tabs don't share them.</li>
+    <li><strong>Live indicators:</strong> <code>mediaTracker.js</code> reports when capture starts and stops (<code>media-access-status</code>). The tab icons and the memory trimmer both use that information.</li>
+    <li><strong>Site settings</strong> in <code>pages/settings</code> lets you review and change saved answers.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="permissions"> I've read this</label>
+</section>
+
+<!-- 12 -->
+<section class="chapter prose" id="memory" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 12</span>
+    <h2>Memory and the background</h2>
+    <p class="chapter-intro">Your goal is a second browser that stays out of the way. These are the parts that make that happen.</p>
+  </div>
+
+  <h3>Trimming memory</h3>
+  <p>Windows keeps each process's recently used memory in physical RAM, called its <strong>working set</strong>. <code>ext/windows/trimMemory.exe</code> (source in <code>scripts/trimMemory.cs</code>) calls Windows' <code>EmptyWorkingSet</code>, which moves that memory out of RAM so other programs can use it. The cost is a small stutter when the page is used again and Windows reads it back in.</p>
+  <ul>
+    <li><code>main/main.js</code> trims the whole app when you minimize Min, 4 seconds after it loses focus, and every 90 seconds while it stays unfocused. This only works in the installed browser, because in the dev build every process is called <code>electron.exe</code>.</li>
+    <li><code>main/viewManager.js</code> trims tabs that have been in the background for at least 30 seconds, every 60 seconds. It also trims the extra processes their ads and embedded videos run in (cross-site frames, see site isolation in the glossary). You can limit this to the times Min isn't in use (Settings → Performance, below).</li>
+    <li>Both skip tabs that are playing sound or video or using the camera, microphone or screen sharing. They also pause while a download is running.</li>
+  </ul>
+
+  <h3>Memory priority</h3>
+  <p>Windows gives every process's memory a priority from 0 to 7; normal is 5. When RAM runs short, Windows takes memory from low-priority processes first. Chromium already lowers background tabs' CPU priority but leaves their memory at 5. After trimming a background tab, your fork also sets its memory priority to 2 (<code>trimMemory.exe --memory-priority low</code>). So when a game or any other program needs RAM, Min's background tabs are the first to give it up, and your current tab keeps its memory.</p>
+  <p>The tab gets normal priority back straight away when you click it, when it starts playing sound, or when it starts using the camera or screen sharing.</p>
+
+  <h3>Trimmed isn't the same as freed</h3>
+  <p>Task Manager's "Memory" column shows the working set, the part in RAM right now. Trimming shrinks that number, but Windows still reserves the memory for Min (its <strong>private bytes</strong>), keeping it on standby or in the page file. We tested whether background pages could actually give memory back if asked: every background page in 10 tabs was told to collect garbage and then sent Chromium's "memory is critical" signal.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>10 background tabs</th><th>Private memory</th></tr></thead>
+      <tbody>
+        <tr><td>Alive</td><td class="num">1,309 MB</td></tr>
+        <tr><td>After garbage collection</td><td class="num">1,277 MB</td></tr>
+        <tr><td>After the "memory is critical" signal</td><td class="num">1,260 MB (−4%)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>A live page's memory is its real working state: the JavaScript heap, the page's elements, compiled code. There's almost nothing to release. Only hibernation, which closes the page's process, frees memory in bulk. Tabs that must stay alive, such as chats and calls, keep about 100–160 MB each.</p>
+
+  <h3>Hibernating tabs</h3>
+  <p>Every 5 minutes, <code>checkSmartHibernation</code> looks for tabs you haven't used for 15 minutes and closes their views to free memory completely. It used to wait an hour; we lowered it after measuring that 10 background tabs hold about 1.45 GB that hibernation frees. The tab stays in the tab bar and reloads when you click it. A tab is kept alive if any of these are true:</p>
+  <ul>
+    <li>it's selected in any window, or was used in the last 15 minutes;</li>
+    <li>it's playing media or capturing;</li>
+    <li>a download is running;</li>
+    <li>the site has notification permission;</li>
+    <li>the page has text you typed and haven't sent, an open WebSocket (chat apps), an "are you sure you want to leave" handler, or playing media.</li>
+  </ul>
+  <p>"Text you typed" means fields you actually changed. The first version counted any field with a value, and since checkboxes always have one and many sites pre-fill their search box, 6 of 8 test tabs could never hibernate.</p>
+
+  <h3>Covered windows go idle</h3>
+  <p>Chromium can tell when a window is completely covered by other windows, and then treats its pages as hidden: animations stop and timers slow down. Upstream Min turned this off with <code>disable-backgrounding-occluded-windows</code> to avoid a flicker. You removed that flag after we measured this:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Animated test page</th><th>Frames per second</th><th>CPU (one core)</th><th>GPU</th></tr></thead>
+      <tbody>
+        <tr><td>Covered, with the old flag</td><td class="num">69</td><td class="num">39.5%</td><td class="num">16.1%</td></tr>
+        <tr><td>Covered, flag removed</td><td class="num">0</td><td class="num">0%</td><td class="num">0%</td></tr>
+        <tr><td>Visible, flag removed</td><td class="num">69</td><td class="num">38.4%</td><td class="num">20.6%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Sound, calls and notifications carry on in hidden pages. Chromium doesn't pause audio or calls for them. On Electron 45 the covered case still measures 0 frames per second; the visible case, and that switching back to Min doesn't flicker, still need a check with the screen unlocked, because a locked screen counts as covering every window.</p>
+
+  <h3>Other settings that help</h3>
+  <ul>
+    <li><code>backgroundThrottling: true</code> slows timers in background tabs.</li>
+    <li><code>--js-flags=--optimize-for-size</code> tells JavaScript to favor memory over speed. Measuring it showed the speed cost is large and the memory saving too small to see (below), so it's now off unless you turn it on.</li>
+    <li>Tab preview screenshots are only taken while Min has focus.</li>
+  </ul>
+  <h3>Settings → Performance</h3>
+  <p>Two of these savings cost some speed, so the Settings page lets you turn them off. Each explains its pros and cons. Trimming is on unless you turn it off: the code checks <code>!== false</code>, so a profile that never saved it counts as on. The JavaScript option is the other way round, off unless you turn it on (<code>=== true</code>), because of what the measurement below found.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Option</th><th>What changes</th><th>Measured</th></tr></thead>
+      <tbody>
+        <tr><td>"Free up memory from background tabs while you use Min" (<code>trimBackgroundTabs</code>)</td><td>Off: while any Min window has focus, <code>getTabProcessGroups</code> in <code>main/viewManager.js</code> treats every tab as protected, so background tabs are trimmed only once Min isn't in use (minimized, or another program in front). Whole-app trimming and hibernation don't change. Shown on Windows only, the only system that trims.</td><td>Three test tabs of 100–200 MB each, two runs. On, with Min focused: they dropped to 2–19 MB within 100 seconds. Off, focused: they kept their memory; minimized, they dropped to 0–20 MB within 70 seconds. Going back to a trimmed tab with plenty of free RAM: it redrew in 15–25 ms, and reading its 80 MB back took about 20 ms. When RAM is short, Windows may have reused that memory, and the tab reads it back from disk, which takes longer (not measured).</td></tr>
+        <tr><td>"Make websites' JavaScript use less memory" (<code>optimizeJavaScriptForSize</code>)</td><td>On: <code>main/main.js</code> adds <code>--js-flags=--optimize-for-size</code> at startup, so changing it needs a restart (the page shows the restart notice).</td><td>Four real sites open, two runs each: Speedometer 3.1 (a standard test of how fast web apps respond) scored 14.1 and 14.3 with it, 18.7 and 19.0 without, so about a quarter slower. The four sites' memory was the same within 1%.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="try">
+    <span class="callout-label">Try it</span>
+    <ol>
+      <li>Open three or four sites, then pick one tab and stay on it.</li>
+      <li>In Task Manager, find Min's processes (named Electron when you run the dev build) and watch their Memory column for two minutes: the background tabs shrink.</li>
+      <li>Turn off "Free up memory from background tabs while you use Min" and repeat: they keep their memory until you minimize Min.</li>
+    </ol>
+  </div>
+
+  <h3>Where the memory really goes</h3>
+  <p>On 7 November we measured where Min's memory goes, to see what else could be cut. The short answer: Min's own code is small. Most of each process's memory is Chromium and Electron themselves, which every Electron app pays.</p>
+  <ul>
+    <li><strong>Min's own JavaScript is small.</strong> With eight tabs open, the browser UI process used 82–88 MB, but Min's code and data in it (its JavaScript heap) were only about 11 MB. The main process used 111 MB: about 15 MB of Min's code and data, plus 18 MB of ad-block rules.</li>
+    <li><strong>The GPU process grows with what sites draw, not with how many tabs are hidden:</strong> 138 MB with one simple tab, 145 MB with nine, 197 MB with YouTube, GitHub and others open. Minimizing or hibernating didn't shrink it.</li>
+    <li><strong>Node.js costs about 10 MB in each window that has it.</strong> A blank hidden window used 31 MB with it and 21 MB without. Taking it out of the UI would mean rewriting the UI.</li>
+  </ul>
+  <p>Ideas we measured and dropped:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Idea</th><th>What we found</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Run Min in Windows' Efficiency mode</td><td>Chromium already puts background tabs in it, and the visible tab and the UI too once Min is minimized. The processes it leaves alone (main, GPU, network) carry calls and picture-in-picture, which could stutter.</td><td>Not worth it</td></tr>
+        <tr><td>Make the hibernation check cheaper</td><td>Each check takes 2–5 ms and pulls about 3.5 MB back into a trimmed tab, which is trimmed again within a minute: about 1 MB per live tab on average.</td><td>Too small to matter</td></tr>
+        <tr><td>Move the history service into the UI process</td><td>It would save most of the service's 32–34 MB. But your history and bookmarks are stored under a different web address (<code>file://</code>), so everyone's data would have to be moved. A smaller version, removing Node.js from that window, would save about 10 MB without moving anything.</td><td>Not done; the 10 MB version is possible later</td></tr>
+        <tr><td>Remove spare processes or the back/forward cache</td><td>Min has neither: every renderer belongs to the UI, the history service or a tab, and leaving a page closes its process (Back reloads it).</td><td>Nothing to remove</td></tr>
+        <tr><td>Freeze background tabs</td><td>Next section.</td><td>Not built</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Freezing tabs: tested, not built</h3>
+  <p>Chrome can <strong>freeze</strong> a background tab: none of its code runs, but the page keeps its state and carries on instantly when you come back. Electron doesn't do this by itself, because that logic is part of Chrome, not of the parts of Chromium that Electron includes. Min could still ask for it through the DevTools protocol (<code>Page.setWebLifecycleState</code>). It works: a frozen test page carried on exactly where it stopped, with no reload. CPU time used per minute by background tabs:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Page</th><th>Hidden, not frozen</th><th>Frozen</th></tr></thead>
+      <tbody>
+        <tr><td>Busy test page (timers, animation, a worker)</td><td class="num">0.40 s</td><td class="num">0.001 s</td></tr>
+        <tr><td>YouTube</td><td class="num">0.024 s</td><td class="num">0.011 s</td></tr>
+        <tr><td>Wikipedia</td><td class="num">0.002 s</td><td class="num">0.003 s</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Once real sites have loaded, they already use almost no CPU in the background, because Chromium slows them down itself. (One news site even used more while frozen, for a reason we didn't find.) Freezing would also stop useful background work, such as uploads, chats without notification permission, and web apps syncing. Chrome freezes a tab only when its own checks say it's safe, and Electron doesn't have those checks. So it wasn't built. It might help later in one narrow case: tabs that hibernation can't close only because they hold text you haven't sent.</p>
+
+  <div class="warn">
+    <span class="callout-label">A possible problem, not seen yet</span>
+    <p>When Min trims the whole app, it skips a tab that's playing sound or in a call. It doesn't skip the shared Chromium processes that tab relies on. With a tab playing audio, minimizing the installed Min trimmed the audio service (104 → 1 MB), the GPU process (236 → 1 MB) and the network service (62 → 0 MB), while the tab itself kept its 113 MB. Reading that memory back could cause a short audio dropout or video stutter, when you minimize and then every 90 seconds while Min stays in the background. Nobody has heard one yet. If someone does, the fix is a few lines in <code>getProtectedPids()</code> in <code>main/main.js</code>: while any tab plays media or is in a call, protect those processes too, plus the video-capture one. AGENTS.md section 10.4 has the details.</p>
+  </div>
+
+  <div class="note">
+    <span class="callout-label">Ideas for later</span>
+    <ul>
+      <li>Skip the screenshot taken when Min loses focus.</li>
+      <li>Keep one trimming helper running instead of starting <code>trimMemory.exe</code> every minute.</li>
+      <li>Remove Node.js from the history service's window (about 10 MB, same database).</li>
+    </ul>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="memory"> I've read this</label>
+</section>
+
+<!-- 13 -->
+<section class="chapter prose" id="data" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 13</span>
+    <h2>Data and services</h2>
+    <p class="chapter-intro">Where your browser keeps things, and the features built on them.</p>
+  </div>
+  <h3>The profile folder</h3>
+  <p>Everything personal lives in one folder: <code>%APPDATA%\Min</code> for the installed browser and <code>%APPDATA%\Min-development</code> for <code>npm start</code>. That's why dev builds never touch your real history.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File or folder</th><th>Holds</th><th>Written by</th></tr></thead>
+      <tbody>
+        <tr><td><code>settings.json</code></td><td>All settings, including saved site permissions</td><td><code>js/util/settings/settingsMain.js</code></td></tr>
+        <tr><td><code>sessionRestore.json</code></td><td>Your open tasks and tabs (every 30 s)</td><td><code>js/sessionRestore.js</code></td></tr>
+        <tr><td><code>windowBounds.json</code></td><td>Window size and position</td><td><code>main/main.js</code></td></tr>
+        <tr><td><code>passwordStore</code></td><td>Built-in password manager, encrypted with a key held by Windows (<code>safeStorage</code>, through its async methods since Electron 45)</td><td><code>main/keychainService.js</code></td></tr>
+        <tr><td><code>adblocker-engine-v2.bin</code></td><td>The compiled ad-blocking engine</td><td><code>main/filtering.js</code></td></tr>
+        <tr><td><code>customFilters.txt</code></td><td>Your own blocking rules (optional)</td><td>You</td></tr>
+        <tr><td><code>userscripts/</code></td><td>Your userscripts, one <code>.js</code> file each</td><td>You, or the install page</td></tr>
+        <tr><td><code>userscriptData/</code></td><td>Each script's saved values, its downloaded libraries, and <code>scripts.json</code> (on/off, where it was installed from, updates)</td><td><code>main/userscript*.js</code></td></tr>
+        <tr><td><code>extensions.json</code>, <code>extensions/</code></td><td>Installed Chrome extensions: which ones, on or off, and the unpacked files of <code>.crx</code> installs</td><td><code>main/extensions.js</code></td></tr>
+        <tr><td><code>tools/</code></td><td>The Bitwarden and 1Password command-line tools</td><td>Password setup</td></tr>
+        <tr><td>IndexedDB (inside Chromium's folders)</td><td>History, bookmarks, full-text index (<code>browsingData2</code>)</td><td>Places service</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Settings</h3>
+  <p>The main process owns <code>settings.json</code>. The UI reads it at startup and changes values with <code>settings.set(key, value)</code>, which sends <code>settingChanged</code> to the main process. The main process saves the file and tells every other window. Code that cares about a setting calls <code>settings.listen('darkMode', fn)</code>. The <code>min://</code> settings page talks to the UI through <code>postMessage</code> and the <code>settingsPreload.js</code> bridge.</p>
+
+  <h3>History and full-text search</h3>
+  <p>When a page finishes loading, its text goes to <code>places.js</code> in the UI. From there it goes through a private <code>MessageChannel</code> to a hidden window, <code>js/places/placesService.html</code>, which stores it with the Dexie library in IndexedDB.</p>
+  <ul>
+    <li>Words are lowercased and reduced to their stems, so "running" matches "run", and indexed for fast lookup.</li>
+    <li>History and bookmarks share one table, with a flag that marks bookmarks.</li>
+    <li>History that isn't bookmarked is deleted after 42 days.</li>
+    <li>The hidden window keeps a copy in memory so suggestions appear instantly as you type.</li>
+  </ul>
+
+  <h3>The smaller features</h3>
+  <ul>
+    <li><strong>Passwords:</strong> the built-in store, Bitwarden or 1Password (through their command-line tools). <code>passwordFill.js</code> handles the page side.</li>
+    <li><strong>Downloads:</strong> <code>main/download.js</code> watches <code>will-download</code> and streams progress to the download bar (<code>js/downloadManager.js</code>). PDFs open in <code>pages/pdfViewer</code>, which uses Mozilla's pdf.js.</li>
+    <li><strong>Reader view:</strong> <code>reader/</code> fetches the page again and runs Mozilla's Readability library on it to pull out the article.</li>
+    <li><strong>Translation:</strong> runs entirely on your computer in a hidden window, using the Bergamot translator. It downloads language models the first time you use them.</li>
+    <li><strong>Userscripts:</strong> they have their own chapter next.</li>
+    <li><strong>Internal pages:</strong> <code>main/minInternalProtocol.js</code> serves <code>min://app/...</code> from the app folder only, and rejects <code>..</code> tricks that try to escape it.</li>
+  </ul>
+  <div class="warn">
+    <span class="callout-label">Worth deciding for your fork</span>
+    <p><code>js/statistics.js</code> sends anonymous usage statistics to upstream Min's server (<code>services.minbrowser.org</code>) once a day unless the setting <code>collectUsageStats</code> is <code>false</code>. Translation models also download from that server. As your own browser, you may want to turn statistics off by default or point them somewhere you control.</p>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="data"> I've read this</label>
+</section>
+
+<!-- 14 -->
+<section class="chapter prose" id="userscripts" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 14</span>
+    <h2>Userscripts</h2>
+    <p class="chapter-intro">Small scripts you install to change how a website looks or works. Your fork runs the same ones Tampermonkey does, without an extension.</p>
+  </div>
+  <p>A userscript is a JavaScript file with a comment block at the top that says which sites it's for and what extra powers it needs. Sites like Greasy Fork and OpenUserJS host thousands of them, from Return YouTube Dislike to dark themes and download buttons. Other browsers need an extension such as Tampermonkey to run them. Your fork has it built in: turn on "Enable user scripts" in Settings.</p>
+
+  <h3>The header block</h3>
+  <pre class="code">// ==UserScript==
+// @name         Min userscript demo
+// @match        https://example.com/*
+// @run-at       document-idle
+// @grant        GM_setValue
+// @connect      api.github.com
+// ==/UserScript==</pre>
+  <ul>
+    <li><code>@match</code> and <code>@include</code> say which pages the script runs on; <code>@exclude</code> says where it doesn't.</li>
+    <li><code>@run-at</code> says when: before the page's own scripts (<code>document-start</code>), once the page has loaded (<code>document-end</code>), or a moment later (<code>document-idle</code>, the default).</li>
+    <li><code>@grant</code> asks for Greasemonkey functions, the script's extra powers: saving data, contacting other sites, showing notifications and so on.</li>
+    <li><code>@connect</code> lists the other sites the script may contact.</li>
+    <li><code>@require</code> names libraries (like jQuery) that are downloaded once, when the script is installed.</li>
+  </ul>
+
+  <h3>What happens when a page loads</h3>
+  <ol class="steps">
+    <li><div><p>The preload (Chapter 08) asks the main process "which scripts match this frame?" It asks <em>synchronously</em>: the page waits for the answer, about 0.1 to 1 ms, so a <code>document-start</code> script really runs before the page's first script.</p></div></li>
+    <li><div><p>The main process (<code>main/userscripts.js</code>) checks the frame's address against each script's rules (<code>js/util/userscriptMatching.js</code>) and sends back the matching scripts' code and saved data.</p></div></li>
+    <li><div><p>The preload runs each script at its <code>@run-at</code> moment. Scripts also run inside iframes unless they say <code>@noframes</code>, and they skip private tabs unless you allow it in Settings.</p></div></li>
+  </ol>
+
+  <h3>Giving scripts powers without giving them to the website</h3>
+  <p>A userscript has to run in the page's main world, because it works with the site's own variables (Tampermonkey calls the page's <code>window</code> <code>unsafeWindow</code>). But its Greasemonkey functions must stay out of the website's reach. If a site could call <code>GM_xmlhttpRequest</code>, it could read other sites while you're signed in to them.</p>
+  <p>The trick: the preload turns each script into a function whose parameters are the Greasemonkey functions, then runs it in the main world with Electron's <code>contextBridge.executeInMainWorld</code>. The script receives the functions as arguments, and they never appear on <code>window</code>. The functions themselves stay in the preload's isolated world and ask the main process for anything privileged. We checked that this works on a page with strict security rules, on GitHub and on YouTube.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Greasemonkey functions</th><th>What they do</th></tr></thead>
+      <tbody>
+        <tr><td><code>GM_getValue</code>, <code>GM_setValue</code>…</td><td>Save the script's own data. Other tabs running the script see changes straight away.</td></tr>
+        <tr><td><code>GM_addStyle</code>, <code>GM_addElement</code></td><td>Add CSS or elements, even on sites whose security rules would block them.</td></tr>
+        <tr><td><code>GM_xmlhttpRequest</code></td><td>Fetch from another site, sent by the main process with your logins. Only to the page's own site and the domains in <code>@connect</code>.</td></tr>
+        <tr><td><code>GM_download</code>, <code>GM_openInTab</code></td><td>Start a download; open (and close) a tab.</td></tr>
+        <tr><td><code>GM_setClipboard</code>, <code>GM_notification</code></td><td>Copy text; show a system notification.</td></tr>
+        <tr><td><code>GM_registerMenuCommand</code></td><td>Add a command under "Userscript commands" in the page's right-click menu.</td></tr>
+        <tr><td><code>GM_getResourceText</code>, <code>GM_info</code></td><td>Read files listed with <code>@resource</code>; read the script's own details.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Installing and updating</h3>
+  <ul>
+    <li>Open any <code>.user.js</code> link and Min shows its install page (<code>pages/userscriptInstall</code>) instead of the code. It lists the sites the script runs on, the sites it can contact and what it can do, with warnings for scripts that run everywhere or can reach any site.</li>
+    <li>Min notices <code>.user.js</code> files in the main process, from the response's headers (<code>main/download.js</code>), not in the page. GitHub serves raw files with a security rule that switches off the preload, so the page can't report itself.</li>
+    <li>Installed scripts are checked for updates once a day. An update installs by itself unless it asks for more (new sites, domains or functions) or you edited the script. Then Settings shows "Review update".</li>
+    <li>Settings lists your scripts: switch one off, edit it (in Notepad), remove it (to the Recycle Bin), create a new one, or check for updates.</li>
+  </ul>
+  <div class="warn">
+    <span class="callout-label">Why "Edit" opens Notepad</span>
+    <p>On Windows, double-clicking a <code>.js</code> file doesn't open an editor; it <em>runs</em> the file with Windows Script Host. Min opens scripts in Notepad on purpose.</p>
+  </div>
+
+  <h3>Where the code lives</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Runs in</th><th>Job</th></tr></thead>
+      <tbody>
+        <tr><td><code>main/userscripts.js</code></td><td><span class="chip main">Main</span></td><td>Loads and watches the scripts folder, matches frames, keeps saved values and menu commands.</td></tr>
+        <tr><td><code>main/userscriptAPI.js</code></td><td><span class="chip main">Main</span></td><td>The Greasemonkey functions that need the main process: requests, downloads, tabs, clipboard, notifications.</td></tr>
+        <tr><td><code>main/userscriptInstall.js</code></td><td><span class="chip main">Main</span></td><td>Install page, library downloads, daily updates, the Settings list.</td></tr>
+        <tr><td><code>js/preload/userscripts.js</code></td><td><span class="chip page">Page</span></td><td>Runs scripts at the right moment, with their Greasemonkey functions.</td></tr>
+        <tr><td><code>js/util/userscriptMatching.js</code></td><td>Everywhere</td><td>Reads the header block and matches addresses. Unit-tested in <code>test/</code>.</td></tr>
+        <tr><td><code>pages/userscriptInstall/</code></td><td><span class="chip page">Page</span></td><td>The install page.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="try">
+    <span class="callout-label">Try it</span>
+    <ol>
+      <li>Run <code>npm start</code>, then open <code>file:///D:/Ashmin-Gold/test/manual/userscript-demo.user.js</code> in the address bar and click Install.</li>
+      <li>Open <code>https://example.com</code>. A box counts your visits (saved values) and shows Min's GitHub stars (a request allowed by <code>@connect</code>).</li>
+      <li>Right-click the page: "Userscript commands" has the demo's two commands.</li>
+    </ol>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="userscripts"> I've read this</label>
+</section>
+
+<!-- 15 -->
+<section class="chapter prose" id="build" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 15</span>
+    <h2>Building and shipping</h2>
+    <p class="chapter-intro">From the files you edit to the installer you hand to someone.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>npm install</code></td><td>Installs packages, then runs <code>scripts/setupDevEnv.js</code>, which switches off one risky Electron feature (a "fuse"). Since Electron 42, the Electron program itself downloads the first time it's used, not during <code>npm install</code>.</td></tr>
+        <tr><td><code>npm start</code></td><td>Builds everything, then runs the dev build and a watcher that rebuilds when you save.</td></tr>
+        <tr><td><code>npm run build</code></td><td>Builds the four outputs listed below.</td></tr>
+        <tr><td><code>npm test</code> / <code>npm run lint</code></td><td>Style checks. <code>lint</code> also rewrites files to fix style, so don't run it on unrelated changes.</td></tr>
+        <tr><td><code>npm run test:unit</code></td><td>The unit tests in <code>test/</code> (so far, the userscript matcher).</td></tr>
+        <tr><td><code>npm run buildWindows</code></td><td>Packages Min for Windows: x64 and ARM (Electron stopped making 32-bit builds in version 44). For just your machine: <code>node scripts/buildWindows.js --arch=x64</code> after a build.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>The four build outputs</h3>
+  <ul>
+    <li><code>scripts/buildMain.js</code>: the translations plus <code>main/*.js</code> and a few shared helpers, glued into <code>main.build.js</code>.</li>
+    <li><code>scripts/buildBrowser.js</code>: browserify bundles <code>js/default.js</code> and everything it requires into <code>dist/bundle.js</code>.</li>
+    <li><code>scripts/buildBrowserStyles.js</code>: <code>css/*.css</code> into <code>dist/bundle.css</code>.</li>
+    <li><code>scripts/buildPreload.js</code>: <code>js/preload/*</code> into <code>dist/preload.js</code>.</li>
+  </ul>
+  <div class="note">
+    <span class="callout-label">What the watcher does and doesn't do</span>
+    <ul>
+      <li>UI changes: press <kbd>Alt</kbd>+<kbd>Ctrl</kbd>+<kbd>R</kbd> in the dev build to reload the interface.</li>
+      <li>Main-process changes: quit and restart the dev build, because the watcher rebuilds but doesn't restart.</li>
+      <li>Translation changes: run <code>npm run build</code>, because the watcher doesn't rebuild them.</li>
+    </ul>
+  </div>
+  <h3>Packaging</h3>
+  <ol class="steps">
+    <li><div><p><code>scripts/createPackage.js</code> asks electron-builder to copy the app (minus source folders, scripts and maps) next to Electron's own files in <code>dist/app/win-unpacked</code>. Your code is stored as plain files rather than packed into an archive (<code>asar: false</code>). The same Electron fuse is switched off in the copied <code>Min.exe</code>.</p></div></li>
+    <li><div><p><code>scripts/buildWindows.js</code> zips that folder (<code>Min-v1.35.7-windows.zip</code>) and builds a Squirrel installer (<code>min-1.35.7-setup.exe</code>). With <code>--dev</code> it builds a separate "Min Dev" app that can be installed next to the real one.</p></div></li>
+  </ol>
+  <div class="warn">
+    <span class="callout-label">Version numbers</span>
+    <p>The installer uses the version in <code>package.json</code>, still upstream's <code>1.35.7</code>. Squirrel may skip installing a version that's already installed, so raise the version (for example to <code>1.35.8</code>) when you ship a new build to an existing install.</p>
+  </div>
+  <p>The one GitHub workflow (<code>.github/workflows/build-packages.yml</code>) builds packages for Windows, macOS and Linux when you start it by hand. Nothing runs automatically on a push.</p>
+  <label class="read-toggle"><input type="checkbox" data-read="build"> I've read this</label>
+</section>
+
+<!-- 16 -->
+<section class="chapter prose" id="electron" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 16</span>
+    <h2>Keeping Electron current</h2>
+    <p class="chapter-intro">Electron releases a new major version about every eight weeks, each with a newer Chromium. Upgrading brings security fixes and features, and sometimes breaks things.</p>
+  </div>
+  <p>We upgraded because Chrome extension support (Chapter 18) needs it: on Electron 43.4.1, modern extensions' background workers never received events such as alarms. The fixes are in 43.8.4 and 45.1. Min now runs 45.2.2.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td>Electron</td><td class="num">43.4.1</td><td class="num">45.2.2</td></tr>
+        <tr><td>Chromium</td><td class="num">150</td><td class="num">156.0.8078.80</td></tr>
+        <tr><td>Node.js</td><td class="num">24.18</td><td class="num">24.22.2</td></tr>
+        <tr><td>Windows installer</td><td class="num">155 MB</td><td class="num">165 MB</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>How an upgrade goes</h3>
+  <ol class="steps">
+    <li><div><p>Read Electron's list of breaking changes (<code>docs/breaking-changes.md</code> in the Electron repository) for every version you're skipping: here, 44 and 45.</p></div></li>
+    <li><div><p>Search Min's code for each changed feature, to see which ones it uses.</p></div></li>
+    <li><div><p>Install: change both <code>electron</code> and <code>electronVersion</code> (which the installer build uses) in <code>package.json</code>, then run <code>npm install</code>. Its last step marks the new Electron binary the way Min needs.</p></div></li>
+    <li><div><p>Fix what broke, then test everything, including memory and CPU against the old version.</p></div></li>
+  </ol>
+
+  <h3>What changed in Min</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Electron change</th><th>What Min does now</th></tr></thead>
+      <tbody>
+        <tr><td>The browser UI can't use the clipboard directly any more.</td><td>"Paste and go", "Copy link", the calculator and the copy-URL shortcut ask the main process (<code>clipboardReadText</code>, <code>clipboardWrite</code> in <code>main/remoteActions.js</code>).</td></tr>
+        <tr><td>The password store's encryption functions became async; the old ones disappear in Electron 46.</td><td><code>main/keychainService.js</code> uses the async ones and runs saves one at a time. Files written the old way still open.</td></tr>
+        <tr><td><code>webContents.canGoBack()</code> and its friends are deprecated.</td><td>Back and forward go through <code>webContents.navigationHistory</code> (<code>callViewMethod</code> in <code>main/viewManager.js</code>).</td></tr>
+        <tr><td>Screen sharing is reported as <code>display-capture</code>.</td><td>Nothing to change: Min already allowed it and shows its picker.</td></tr>
+        <tr><td>No more 32-bit Windows or 32-bit ARM Linux builds.</td><td>Removed from the build scripts.</td></tr>
+        <tr><td>45.2 gave extensions Chrome's "synced" storage (kept on this computer).</td><td>Extensions' own pages and their scripts in web pages now share it (Chapter 18).</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <span class="callout-label">How upstream did it</span>
+    <p>Min's original author (PalmerAL) made the same upgrade a few days after us, in two commits: Electron 44, then 45.2.1. Comparing them, most changes match ours. Two of his were better, and Min now has them too: a newer Electron 45 (Min went to 45.2.2, the latest, with a newer Chromium) and a password file that is read and written without pausing the rest of the browser. Ours is stricter in two places, which stay: only Min's own windows can use the clipboard handlers, and back/forward use Electron's new history functions.</p>
+  </div>
+
+  <h3>Testing an upgrade</h3>
+  <ul>
+    <li><strong>Run old and new side by side.</strong> Install the old Electron in a separate folder and start it on the same code, so the only difference is Electron.</li>
+    <li><strong>Watch for patterns before blaming the upgrade.</strong> At first it looked as if YouTube ads slipped through only on 45. In fact YouTube shows an ad on every other visit, and the test had alternated versions, 43, 45, 43, 45. Running the same version twice in a row showed the same alternation on both.</li>
+    <li><strong>A locked screen hides every window.</strong> Tests of what a visible window does give 0 frames per second while Windows is locked.</li>
+    <li><strong>Leave your test data alone.</strong> Test scripts use the dev profile, which also holds what you installed while testing. They must back it up and put it back.</li>
+  </ul>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>10 tabs, average of 2 runs</th><th>Electron 43</th><th>Electron 45</th></tr></thead>
+      <tbody>
+        <tr><td>All tabs open (private memory)</td><td class="num">1,647 MB</td><td class="num">1,673 MB</td></tr>
+        <tr><td>After hibernating them</td><td class="num">414 MB</td><td class="num">406 MB</td></tr>
+        <tr><td>Idle CPU</td><td class="num">0.3%</td><td class="num">0.5%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The 1.6% difference with tabs open is smaller than the difference between two runs of the same version (up to 74 MB). Min's own processes use exactly the same memory on both.</p>
+  <div class="note">
+    <span class="callout-label">Seeing deprecations</span>
+    <p>Start Electron with <code>--trace-deprecation</code> and it prints where the code calls anything that's on its way out. Fix those before they're removed.</p>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="electron"> I've read this</label>
+</section>
+
+<!-- 17 -->
+<section class="chapter prose" id="debug" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 17</span>
+    <h2>Debugging toolkit</h2>
+    <p class="chapter-intro">How to see what each process is doing.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>To see</th><th>Do this</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip main">Main process</span> logs</td><td>Look at the terminal where <code>npm start</code> runs. <code>console.log</code> in <code>main/*.js</code> prints there.</td></tr>
+        <tr><td><span class="chip ui">Browser UI</span></td><td>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> ("Inspect Browser", dev build only). Its console has the globals <code>tasks</code>, <code>tabs</code> and <code>ipc</code>.</td></tr>
+        <tr><td><span class="chip page">A web page</span></td><td>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> or <kbd>F12</kbd>, the same as in Chrome.</td></tr>
+        <tr><td><span class="chip ui">History service</span></td><td>Use "Inspect Places Service" in the app menu (dev build only).</td></tr>
+        <tr><td>Reload the UI</td><td>Press <kbd>Alt</kbd>+<kbd>Ctrl</kbd>+<kbd>R</kbd> (dev build).</td></tr>
+        <tr><td>Per-process memory and CPU</td><td>Open Task Manager → Details. Add the "Command line" column: <code>--type=renderer</code>, <code>--type=gpu-process</code> and so on tell you which process is which.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Remote debugging: how the YouTube bugs were found</h3>
+  <p>Start Min with <code>--remote-debugging-port=9222</code> and every page, including Min's own UI, becomes inspectable from outside. Open <code>http://127.0.0.1:9222/json/list</code> to see them. A script can then connect over the Chrome DevTools Protocol to read errors, watch network requests or run code in a page. That's how we recorded the frozen Shorts in your signed-in session and found the looping scriptlet.</p>
+  <pre class="code"><span class="c"># PowerShell: start the installed browser with debugging on (quit Min first)</span>
+&amp; "$env:LOCALAPPDATA\min\app-1.35.7\min.exe" --remote-debugging-port=9222</pre>
+  <div class="warn">
+    <span class="callout-label">Close it afterwards</span>
+    <p>While the port is open, any program on your computer can control that browser, including your signed-in sites. Quit and reopen Min normally when you're done.</p>
+  </div>
+  <h3>The automated test suites</h3>
+  <p>Everything that was ever checked while building Min's features is kept as a script in <code>test/e2e</code>. A script starts Min, clicks and types through the DevTools connection, and checks what happened. Run them all with:</p>
+  <pre class="code">npm run build
+npm run test:e2e</pre>
+  <ul>
+    <li><strong>They can't hurt your data.</strong> Every run gets a brand-new, throwaway profile in the Windows temp folder, deleted afterwards. Your daily Min (<code>%APPDATA%\Min</code>) and your dev profile are never touched.</li>
+    <li><strong>They stop by themselves</strong> if Min crashes, freezes or shows an error, and each has a time limit.</li>
+    <li><strong>Leave the computer alone while they run</strong>: Min's windows pop up and take focus. A locked screen makes the checks that need to see a window fail (popups, screenshots), and each result says whether the screen was locked.</li>
+    <li><strong>Results</strong> go to <code>test/e2e/results/</code>: one file per suite listing every check as PASS or FAIL, plus what Min printed.</li>
+    <li>The <code>measure-*</code> scripts don't pass or fail; they repeat a measurement (ad blockers, memory, tabs). Rerun one after a change instead of building a new one.</li>
+  </ul>
+  <p><code>test/e2e/README.md</code> lists every suite, what it checks and what it needs.</p>
+  <div class="note">
+    <span class="callout-label">Handing work between agents</span>
+    <p>Agents (even on different Claude accounts) share nothing but the repository. So each one starts by reading <code>AGENTS.md</code> and looking there for anything already measured or tried. Every test, measurement or diagnostic script goes into <code>test/e2e</code> from its first run, even a quick one, so nobody ever writes the same test twice: a new check into the suite it concerns, a diagnosis as an "info" check that records what it saw, and a fix for Electron's own behaviour also into <code>electron-workarounds</code>, which shows when a later Electron makes the fix unnecessary (it caught one on 9 November). Before stopping, an agent writes down what it changed, measured and rejected, and updates this guide's source, <code>docs/inside-min.html</code>, when the architecture changes. Nothing important is left only in a chat.</p>
+  </div>
+
+  <h3>Errors you'll meet</h3>
+  <ul>
+    <li><strong>"Object has been destroyed"</strong>: code used a tab or window after it closed. Check <code>isDestroyed()</code> first.</li>
+    <li><strong>"An object could not be cloned"</strong>: you sent something through IPC that isn't plain data, such as a function or a DOM element.</li>
+    <li><strong>Hundreds of "X is not defined" from <code>npm test</code></strong>: lint noise caused by the glued main files (Chapter 04).</li>
+    <li><strong>New text shows as "undefined"</strong>: the string didn't make it into <code>dist/localization.build.js</code>. The language files use Windows line endings; a line added with Unix ones makes the build silently drop strings. Keep each file's line endings the same.</li>
+    <li><strong><code>electron.clipboard</code> is undefined in the UI</strong>: since Electron 44 only the main process has it. Use <code>ipc.invoke('clipboardWrite', …)</code>.</li>
+    <li><strong>A box saying "A JavaScript error occurred in the main process"</strong>: code in the main process threw an error nobody caught. While the box is open, the main process is frozen: tabs stop loading and nothing answers until you click OK. Min hit this when it downloaded its ad-block lists with Node's own <code>fetch</code>, which has a bug in Node 24; it now uses Electron's <code>net.fetch</code>. Test scripts catch these errors themselves (<code>process.on('uncaughtException')</code>), so the box never appears and the script stops instead of hanging.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="debug"> I've read this</label>
+</section>
+
+<!-- 18 -->
+<section class="chapter prose" id="extensions" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 18</span>
+    <h2>Chrome extensions</h2>
+    <p class="chapter-intro">Chrome extensions, installed as easily as in Chrome: the Web Store's own "Add to Chrome" button works, extensions update themselves, and their toolbar buttons, popups, menu items and shortcuts work. An ad-blocking extension like uBlock Origin Lite can take over from Min's own ad blocker, the features popular extensions rely on (screenshots, downloads, side panels, sign-in windows) work, and idle extensions shrink while Min isn't in use.</p>
+  </div>
+  <p>Electron can load Chrome extensions, but it only implements part of Chrome's extension system. A free library, <code>electron-chrome-extensions</code>, fills in much of the rest: tabs and windows, toolbar buttons and their popups, right-click menu items, keyboard commands. Min adds what users expect from Chrome: installing from a file or the Web Store, a permission review, a list in Settings, and updates.</p>
+
+  <h3>What an extension is</h3>
+  <ul>
+    <li>A folder with a <code>manifest.json</code>: its name, version, permissions, and which files do what.</li>
+    <li>A <strong>background worker</strong>: the extension's own invisible page that listens for events (a tab changed, a message arrived, an alarm went off). It runs in a process of its own.</li>
+    <li><strong>Content scripts</strong>: code it adds to the websites it's allowed on, like a userscript.</li>
+    <li>Its own pages, at <code>chrome-extension://&lt;id&gt;/…</code>: popups, options, welcome pages.</li>
+  </ul>
+  <p>The Chrome Web Store ships extensions as <code>.crx</code> files: a zip file with a signed header in front. The signature proves the file comes from the extension's developer, and the developer's key also decides the extension's id, a 32-letter name like <code>eimadpbcbfnmbkopoojfekhnkhdbieeh</code> (Dark Reader).</p>
+
+  <h3>What happens when you install one</h3>
+  <ol class="steps">
+    <li><div><p>You click "Add to Chrome" on the Chrome Web Store, or in Settings → Extensions pick a <code>.crx</code> file (or an unpacked folder, for developers).</p></div></li>
+    <li><div><p>Min checks the signatures (<code>js/util/extensionPackages.js</code>, unit-tested) and reads the manifest. A file from the Web Store carries two: the developer's, and the store's own, which proves Google's store served it.</p></div></li>
+    <li><div><p>A dialog shows what the extension can do: "Read and change all your data on all websites", "Manage your downloads" and so on. Nothing is installed until you say yes.</p></div></li>
+    <li><div><p>Min unpacks it into your profile, keeping the developer's key so the id matches Chrome's, and records it in <code>extensions.json</code>.</p></div></li>
+    <li><div><p>The first time, Min starts the extension system; then it loads the extension and tells it "you were just installed". Dark Reader, for example, opens its welcome page.</p></div></li>
+  </ol>
+
+  <h3>The Web Store's "Add to Chrome" button</h3>
+  <p>The store's page talks to the browser through a hidden Chrome-only API, <code>chrome.webstorePrivate</code>: "is this extension installed?", "install it", "remove it". Electron doesn't have it, so on <code>chromewebstore.google.com</code> only, a small preload (<code>js/preload/webStore.js</code>) adds it to the page and passes each call to the main process. Main accepts these calls from the store's own page and nowhere else.</p>
+  <p>When you click the button, Min shows its permission review, downloads the extension from Google's server, checks both signatures and that it's the extension you clicked, and installs it. The button then turns into "Remove from Chrome", which asks first and removes it. The store still calls Min "Chrome" and shows a "Switch to Chrome" banner, because Min doesn't claim to be Google Chrome; installing works anyway.</p>
+  <p>One surprise on the way: an old Min fix for Google's websites replaced the page's <code>chrome</code> object on every <code>google.com</code> site, which threw away the store's API. The store is now left alone.</p>
+
+  <h3>Updates</h3>
+  <p>Every few hours (and when you click "Check for updates" in Settings), Min asks Google's update server, in one request, whether any installed extension has a newer version. Chrome does the same. An update that asks for nothing new installs by itself. One that wants more, say access to every website, waits: the old version keeps running, Min shows a notification once, and Settings offers "review the update", which lists only what's new.</p>
+
+  <h3>Toolbar buttons and popups</h3>
+  <p>Most extensions have a button in Chrome's toolbar. In Min, they appear in the top bar, just right of the "+" (new tab) button, with the extension's icon and its badge: the small number or word some extensions show, such as an unread count. The extension library keeps track of each button's icon, title, badge and popup, and tells Min whenever one changes. Min then redraws the buttons for the tab you're looking at, since a badge can differ from tab to tab.</p>
+  <ul>
+    <li><strong>Click</strong>: the extension's popup opens as a small window right under its button. Click again, or anywhere else, to close it. An extension without a popup is told it was clicked instead.</li>
+    <li><strong>Right-click</strong>: the extension's name (opens its store page), its own menu items, Options, "Remove from Min…" and "Manage extensions".</li>
+    <li><strong>On a page</strong>: items extensions add to the right-click menu ("Translate this", "Save to…") appear after Min's own.</li>
+    <li><strong>Keyboard shortcuts</strong> an extension suggests (Alt+Shift+D, for example) work, unless Min already uses those keys. Then Min's shortcut wins, as in Chrome.</li>
+    <li><strong>Options pages</strong> open in a tab, from Settings or from the button's menu.</li>
+    <li>Private tabs show no extension buttons, since extensions don't run there.</li>
+  </ul>
+  <p>Dark Reader sets its icon to <code>"../icons/…"</code>: a path relative to its background script's folder, which Chrome allows. Min resolves these like web addresses, which can never point outside the extension's own folder.</p>
+
+  <h3>Nothing runs until you install one</h3>
+  <p>The extension library adds a small script to every page and starts with the browser, so Min only starts it once an extension is turned on. With none installed (or after removing the last one), the library isn't even loaded. That's the "zero cost" rule you set.</p>
+  <p>With some installed, each running extension costs about one process and around 80 MB: Dark Reader, Bitwarden and uBlock Origin Lite together added three processes and 248 MB, and used no CPU while idle. Extensions only run in normal tabs, never in private ones.</p>
+  <p>While Min isn't in use (no Min window focused), extensions' processes are trimmed every minute like background tabs (Chapter 12), and Windows gets to reuse their memory first. Each background worker tells Min its process when it starts. In a test, Dark Reader's and Bitwarden's processes went from 119 and 187 MB to about 3 and 10 MB once Min was minimized, and both kept working. While you use Min they're left alone, because a trimmed worker would have to page back in on every page you load. One showing a popup or a side panel, or playing sound, is never touched.</p>
+
+  <h3>Gaps Min fills itself</h3>
+  <p>Testing with real extensions turned up four things that Electron and the library get wrong, which <code>main/extensions.js</code> and <code>js/preload/extensionSupport.js</code> fix:</p>
+  <ul>
+    <li><strong>"You were installed" and "the browser started"</strong> (<code>onInstalled</code>, <code>onStartup</code>) were never sent. Many extensions set themselves up in those events. Min now remembers what happened and tells each extension when its background worker starts.</li>
+    <li><strong>Background tabs jumped to the front.</strong> The library assumes every new tab is the one you're looking at and asks Min to switch to it, so with any extension installed, Ctrl+click would have opened the link in front of you. Min now adds tabs quietly, and a tab only counts as active when Min shows it.</li>
+    <li><strong>Two names for the same thing.</strong> Chromium offers extension features under two names, <code>chrome</code> and <code>browser</code>. The library only fills in <code>chrome</code>, and uBlock Origin Lite uses <code>browser</code>, so it crashed on start. Min makes both names point to the same object.</li>
+    <li><strong>Installing one extension broke the others</strong> (found 9 November). Whenever an extension is added, removed, turned on or off, Chromium rebuilds some of the <code>chrome</code> objects inside every other extension that's already running, and the rebuilt ones lack everything the library and Min added: even "open a tab" was gone. The extension stayed half-broken until Chromium happened to restart it. Dark Reader showed it: with Bitwarden installed after it, its popup stayed on "Loading, please wait". Now each extension keeps its finished objects, and Min tells them all to put those back a moment after any extension is loaded or unloaded. (The error Dark Reader logged, about a missing "may I read local files?" function, first looked like something Electron lacks. The extension library does have it; the rebuild had thrown it away.)</li>
+  </ul>
+
+  <h3>Testing 53 popular extensions</h3>
+  <p>To find what else was missing, Min downloaded 53 popular extensions from the Web Store: ad blockers, password managers, translators, YouTube helpers, screenshot tools, developer tools. A script read their code for the Chrome features they call and compared that with what Min offers. Then it installed each one in turn and recorded the errors it hit. All 53 install, and their background workers run. Along the way it found three serious bugs:</p>
+  <ul>
+    <li><strong>SponsorBlock stopped at start.</strong> The extension library "freezes" the <code>chrome</code> object so nothing can be added to it. Real Chrome doesn't, and SponsorBlock adds to it. A second small preload, run just before the library's, skips that one freeze.</li>
+    <li><strong>Awesome Screenshot crashed the whole browser</strong> when its popup opened. The extension makes a hidden "offscreen" page and asks it for the list of cameras and microphones. In Electron 45 that hidden page isn't a full web page, and asking for media there crashes Min. That early preload now makes those requests fail politely in such pages, as if you'd said no. The extension keeps working, minus recording.</li>
+    <li><strong>Installing Wappalyzer froze Min for 30 seconds.</strong> It has 13,000 files, and Min wrote them one by one while everything else waited (Windows scans each new file). Min now writes them in the background, 16 at a time: faster, and the window stays responsive.</li>
+  </ul>
+  <p>Then the missing features most used by those extensions, in <code>main/extensionAPIs.js</code>:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Feature</th><th>Used by</th><th>In Min</th></tr></thead>
+      <tbody>
+        <tr><td>Screenshots (<code>tabs.captureVisibleTab</code>)</td><td>GoFullPage, ColorZilla, Notion…</td><td>A picture of the tab you see.</td></tr>
+        <tr><td>Downloads</td><td>GoFullPage, password managers…</td><td>Saved to your Downloads folder, shown in Min's download bar. The library only had empty stand-ins.</td></tr>
+        <tr><td>Side panels</td><td>Grammarly, DeepL, QuillBot, Bitwarden</td><td>The extension's panel at the right of the window with a title bar and a close button; the page gets narrower beside it. The button's right-click menu has "Open side panel".</td></tr>
+        <tr><td>Sign-in windows (<code>identity</code>)</td><td>Grammarly, DeepL, Stylus…</td><td>The site's sign-in page opens in a small window; Min hands the result back to the extension. Signing in with "your Google account in Chrome" can't work.</td></tr>
+        <tr><td>Page language</td><td>Google Translate, DeepL…</td><td>From what the page says its language is.</td></tr>
+        <tr><td>Privacy settings</td><td>Password managers, VPNs</td><td>Answer like Chrome's, but don't change Min yet. Before, extensions asking for them waited forever.</td></tr>
+        <tr><td>Speech (<code>tts</code>)</td><td>Read Aloud, DeepL</td><td>Spoken with Windows' own voices.</td></tr>
+        <tr><td>Putting a tab to sleep, clearing site data, searching</td><td>Tab managers, privacy tools, new-tab pages</td><td>Min's hibernation (Chapter 12), clearing for some sites or all, Min's search engine.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The extension asks through the same channel the library uses for its own features, which only accepts installed extensions and tells Min which extension is asking, so Min can check its permissions first. A test extension written for this exercised every feature (35 checks).</p>
+  <p>One more fix: when Min starts, a tab waits the few milliseconds the extensions need to load, so their scripts run in the first page too.</p>
+
+  <h3>Where the code lives</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Runs in</th><th>Job</th></tr></thead>
+      <tbody>
+        <tr><td><code>main/extensions.js</code></td><td><span class="chip main">Main</span></td><td>Starts the library, loads extensions, installs, removes, gives extensions Min's tabs, sends the lifecycle events, answers the Web Store page, checks for updates, hands ad blocking to an extension and back.</td></tr>
+        <tr><td><code>ext/minNetworkHelper/</code></td><td>Extensions</td><td>A tiny built-in extension with no code of its own. Min gives it the rules for Google sign-in and tracking parameters while an extension blocks ads.</td></tr>
+        <tr><td><code>js/util/extensionPackages.js</code></td><td><span class="chip main">Main</span></td><td>Reads and checks <code>.crx</code> files, reads the update server's answers, describes permissions and what an update adds. Unit-tested in <code>test/</code>.</td></tr>
+        <tr><td><code>main/extensionAPIs.js</code></td><td><span class="chip main">Main</span></td><td>The features Min adds for extensions: screenshots, downloads, side panels, sign-in windows, speech and the rest.</td></tr>
+        <tr><td><code>js/preload/extensionSupportEarly.js</code></td><td>Extensions</td><td>Runs just before the library's preload: stops the freeze of <code>chrome</code>, and the media requests that would crash Min in hidden pages.</td></tr>
+        <tr><td><code>js/preload/extensionSupport.js</code></td><td>Extensions</td><td>Runs in extensions' pages and workers: the lifecycle events, the <code>browser</code> fix, the features above added to <code>chrome</code>, and putting them back after Chromium rebuilds them.</td></tr>
+        <tr><td><code>js/preload/webStore.js</code></td><td><span class="chip page">Page</span></td><td>On the Chrome Web Store only: the hidden API its "Add to Chrome" button needs.</td></tr>
+        <tr><td><code>js/extensions.js</code></td><td><span class="chip ui">UI</span></td><td>Draws the toolbar buttons and a side panel's title bar, runs extensions' keyboard shortcuts, opens, switches to and closes tabs when an extension asks, searches and speaks for them.</td></tr>
+        <tr><td><code>pages/settings/</code></td><td><span class="chip page">Page</span></td><td>The Extensions section: a link to the Web Store, install from a file, turn on or off, reload, remove, check for updates, review an update.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Letting an extension block ads</h3>
+  <p>Some extensions filter network requests: uBlock Origin Lite, privacy tools, some password managers. Electron switches that off for extensions as soon as the app itself watches requests in the same session, and Min watches them in four places (Chapter 09). So it's one or the other: Min's ad blocker, or the extension's.</p>
+  <ol class="steps">
+    <li><div><p>When you install such an extension, its review says: "Adding it turns off Min's ad blocker in normal tabs, so that this extension blocks there instead; private tabs keep Min's ad blocker."</p></div></li>
+    <li><div><p>Min removes its four hooks from normal tabs' session, and the extension's blocking starts working. Private tabs have sessions of their own, keep the hooks, and keep Min's ad blocker (extensions never run there anyway).</p></div></li>
+    <li><div><p>Settings → Privacy now shows a switch: "Let uBlock Origin Lite block ads and trackers in normal tabs, instead of Min's ad blocker". Turn it off, or turn off or remove the extension, and Min puts its hooks back. Reload open tabs after switching.</p></div></li>
+  </ol>
+  <p>Two surprises came up along the way:</p>
+  <ul>
+    <li><strong>Rule lists start switched off.</strong> Ad-blocking extensions ship their rules as lists in the manifest. Chrome turns on the ones marked "enabled"; Electron doesn't. uBlock Origin Lite turns them on itself, but simpler extensions don't, so after installing Min opens a hidden page of the extension and turns them on from inside it. Electron remembers that across restarts.</li>
+    <li><strong>The hooks had other jobs.</strong> Without them, Min does those another way in normal tabs:
+      <ul>
+        <li>Google sign-in's Firefox identity and the removal of tracking parameters (<code>utm_source</code> and friends) become rules of a tiny built-in extension, <code>ext/minNetworkHelper</code>, which Min loads only in this mode.</li>
+        <li>Opening a <code>.user.js</code> address is spotted when the tab starts loading it, and files (for "save page") are recognised once they've loaded.</li>
+        <li>Reader view asks the main process to fetch the article, since its own fetch is no longer allowed.</li>
+        <li>PDFs open in Chromium's built-in viewer instead of Min's.</li>
+      </ul>
+    </li>
+  </ul>
+  <p>Also lost in this mode: the "block all scripts / images" option and the shield button in the address bar (both are Min's ad blocker's). Min's "blocked" counter doesn't count what the extension blocks.</p>
+
+  <h3>The plan</h3>
+  <ol class="steps">
+    <li><div><p><strong>Upgrade Electron</strong> to 45 (now 45.2.2). Done (Chapter 16).</p></div></li>
+    <li><div><p><strong>A quick trial</strong> with real extensions (Dark Reader, Bitwarden, uBlock Origin Lite). Done.</p></div></li>
+    <li><div><p><strong>Core</strong>: load extensions, the Settings list, install unpacked folders and <code>.crx</code> files, Min's tabs, lifecycle events. Done, waiting for your testing.</p></div></li>
+    <li><div><p><strong>Chrome Web Store</strong>: "Add to Chrome", signature checks, permission review, automatic updates. Done, waiting for your testing.</p></div></li>
+    <li><div><p><strong>Toolbar buttons and popups</strong>, right-click menu items, options pages, keyboard shortcuts. Done, waiting for your testing.</p></div></li>
+    <li><div><p><strong>The network-filtering switch</strong> and its warning. Done, waiting for your testing.</p></div></li>
+    <li><div><p><strong>Fill gaps</strong> found by testing popular extensions, and keep idle extensions' memory low like background tabs. Done, waiting for your testing.</p></div></li>
+  </ol>
+  <div class="fork">
+    <span class="callout-label">Decisions you made</span>
+    <ul>
+      <li>Support any extension, not a chosen few, because Min is meant for general release.</li>
+      <li>Installing should be as easy as in Chrome, with a permission review.</li>
+      <li>Heavy extensions are the user's choice: Min shows their memory and CPU and warns, but doesn't block them.</li>
+      <li>With no extensions installed, Min must cost nothing extra.</li>
+      <li>No old-style extensions (decided 9 November): like Chrome, Min refuses Manifest V2.</li>
+    </ul>
+  </div>
+  <h3>Only the current kind of extension</h3>
+  <p>Chrome extensions come in two formats. The older one, <strong>Manifest V2</strong>, ran a hidden page in the background all the time and could stop any network request in flight. The current one, <strong>Manifest V3</strong>, uses a background worker that sleeps when idle and blocks requests by handing the browser a list of rules. Chrome stopped running Manifest V2 extensions in 2025, and the Chrome Web Store removed the last of them on 31 August 2026. Edge and Opera are following; only Brave keeps four ad blockers by hosting them itself.</p>
+  <p>Min does the same. <code>checkExtensionManifestVersion</code> in <code>main/extensions.js</code> turns one away wherever it could come in: a <code>.crx</code> file, an unpacked folder, the Web Store page, an update. One installed before this change isn't loaded: Settings lists it with the reason, and Remove still works. The bits of Min that only existed for the old format are gone.</p>
+  <p>A few things still can't work, because Electron lacks what they need or Min hasn't added it: Tampermonkey and Violentmonkey (Min's own userscripts replace them), signing in with your Google account through Chrome, recording a tab or the screen (Loom, Awesome Screenshot's video), tab groups and moving tabs, bookmarks and history for extensions, the address-bar keyword feature (omnibox), the list of installed fonts (Dark Reader's font picker), per-site content settings, Google's push messages (Checker Plus for Gmail), and a new-tab page from an extension (Momentum).</p>
+  <p>That list comes from a function-by-function check run on 9 November (<code>measure-extension-survey.js --scan</code>). The first survey compared mostly by feature area, and by hand, so it missed single missing pieces inside an area that otherwise works, like <code>chrome.tabs.TAB_ID_NONE</code>, a fixed value that six of the 53 extensions use (Bitwarden and 1Password among them), now added. The scan reads every <code>chrome.*</code> name the 53 extensions' code mentions (466 of them), then looks each one up in a test extension that asks for every permission they ask for. Apart from what's listed above, everything Chrome has is there. Not covered: the pages extensions add to DevTools.</p>
+  <div class="try">
+    <span class="callout-label">Try it</span>
+    <ol>
+      <li>Run <code>npm start</code>, open Settings, and click "Get extensions from the Chrome Web Store" in the Extensions section.</li>
+      <li>Find Dark Reader and click "Add to Chrome". Read the review, then add it. The button becomes "Remove from Chrome".</li>
+      <li>Click Dark Reader's new button next to "+": its popup opens under it. Right-click the button for its menu.</li>
+      <li>Open a few tabs, then turn the extension off and on in Settings, and remove it from the store page. Restart Min in between to see it come back.</li>
+      <li>Add uBlock Origin Lite the same way and read the warning in its review. Then open a news site in a normal tab and in a private tab: the shield button only shows in the private one, because Min's ad blocker only works there now. Find the switch in Settings → Privacy.</li>
+      <li>Add GoFullPage and take a screenshot of a long page: it captures the page and saves the picture to your Downloads folder. Add Grammarly or DeepL and open its side panel from its button's right-click menu.</li>
+      <li>Minimize Min for two minutes with Dark Reader installed, then open Task Manager: its process is much smaller, and it still works when you come back.</li>
+    </ol>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="extensions"> I've read this</label>
+</section>
+
+<!-- 19 -->
+<section class="chapter prose" id="exercises" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 19</span>
+    <h2>Exercises</h2>
+    <p class="chapter-intro">Small, safe changes that touch each part of the browser. Do them in order, on a new branch, with <code>npm start</code> running.</p>
+  </div>
+  <div class="lab-grid">
+    <div class="try">
+      <span class="callout-label">1 · Poke the tab model</span>
+      <ol>
+        <li>Open the UI's DevTools with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd>.</li>
+        <li>In the console, type <code>tabs.get()</code> and look at the fields.</li>
+        <li>On a tab playing sound, type <code>tabs.update(tabs.getSelected(), { muted: true })</code>. The mute icon appears, but the sound keeps playing.</li>
+        <li>Now read <code>js/tabAudio.js</code>. The real mute button does two things: it tells the page to mute with <code>webviews.callAsync(tabId, 'setAudioMuted', …)</code>, and it updates the model.</li>
+        <li>Type <code>tasks.on('tab-updated', console.log)</code>, then load a page and watch the events arrive.</li>
+      </ol>
+      <p>This teaches you that the UI is drawn from a data model, and that changing the model alone doesn't change the page. That's why <code>browserUI.js</code> always updates both.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">2 · Change a word in the interface</span>
+      <ol>
+        <li>In <code>localization/languages/en-US.json</code>, change <code>"newTabLabel": "New Tab"</code> to <code>"Blank Tab"</code>.</li>
+        <li>Run <code>npm run build</code>, then restart the dev build.</li>
+        <li>Open a new tab and look at its title.</li>
+      </ol>
+      <p>This teaches you how translations flow into every process through <code>l()</code>.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">3 · Add a keyboard shortcut</span>
+      <p>In <code>js/defaultKeybindings.js</code>, inside <code>initialize</code>, next to the other shortcuts, add:</p>
+      <pre class="code">keybindings.defineShortcut({ keys: 'mod+shift+y' }, function () {
+  console.log('Selected tab:', tabs.get(tabs.getSelected()).url)
+})</pre>
+      <p>Save, press <kbd>Alt</kbd>+<kbd>Ctrl</kbd>+<kbd>R</kbd>, then press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> and check the UI console. This teaches you UI code and the reload cycle.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">4 · Write a suggestion plugin</span>
+      <p>Create <code>js/searchbar/wordCountPlugin.js</code>:</p>
+      <pre class="code">const searchbarPlugins = require('searchbar/searchbarPlugins.js')
+
+function initialize () {
+  searchbarPlugins.register('wordCount', {
+    index: 1,
+    trigger: function (text) { return text.startsWith('wc ') },
+    showResults: function (text) {
+      searchbarPlugins.reset('wordCount')
+      const words = text.slice(3).trim().split(/\s+/).filter(Boolean).length
+      searchbarPlugins.addResult('wordCount', { title: words + ' words' })
+    }
+  })
+}
+
+module.exports = { initialize }</pre>
+      <p>Then add <code>require('searchbar/wordCountPlugin.js').initialize()</code> to <code>js/default.js</code>, next to the <code>calculatorPlugin</code> line. Reload, and type <code>wc hello there world</code> in the address bar. This teaches you the plugin system and how modules start up.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">5 · Watch the ad blocker work</span>
+      <ol>
+        <li>In <code>main/filtering.js</code>, find <code>handleRequest</code> and the block that starts <code>if (match) {</code>. Add <code>console.log('blocked', details.url)</code> inside it.</li>
+        <li>Quit and restart the dev build (main-process code doesn't reload).</li>
+        <li>Open a news site and watch the terminal.</li>
+        <li>Remove the line when you're done.</li>
+      </ol>
+      <p>This teaches you main-process code, network hooks and where logs appear.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">6 · Follow a message from end to end</span>
+      <ol>
+        <li>Search the project for <code>set-window-title</code>. You'll find a sender in <code>js/browserUI.js</code> and a receiver in <code>main/main.js</code>.</li>
+        <li>Read both, then do the same for <code>updatePermissions</code> and <code>hibernateTab</code>.</li>
+      </ol>
+      <p>This teaches you to trace IPC, which is the skill you'll use most when debugging.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">7 · Write your first userscript</span>
+      <ol>
+        <li>In Settings, turn on "Enable user scripts", then click "New script". Notepad opens a template.</li>
+        <li>Change <code>@match</code> to <code>https://example.com/*</code> and replace the comment inside the function with <code>document.body.style.background = 'lightyellow'</code>. Save.</li>
+        <li>Open <code>https://example.com</code>. Min reloads scripts when the file changes, so no restart is needed.</li>
+        <li>Now count visits: change <code>@grant none</code> to <code>@grant GM_setValue</code> plus <code>@grant GM_getValue</code>, and add <code>GM_setValue('n', GM_getValue('n', 0) + 1); document.title = GM_getValue('n')</code>.</li>
+      </ol>
+      <p>This teaches you the header block, <code>@grant</code>, and that the site itself can't see <code>GM_setValue</code>: type <code>typeof GM_setValue</code> in the page's DevTools console.</p>
+    </div>
+    <div class="try">
+      <span class="callout-label">8 · Follow the clipboard</span>
+      <ol>
+        <li>Search the project for <code>clipboardWrite</code>. You'll find senders in <code>js/webviewMenu.js</code> and <code>js/defaultKeybindings.js</code>, and the handler in <code>main/remoteActions.js</code>.</li>
+        <li>Read <code>writeToClipboard</code> and work out why the UI can't just call <code>electron.clipboard</code> (Chapter 16).</li>
+      </ol>
+      <p>This teaches you to read an upgrade's changes as messages between processes.</p>
+    </div>
+  </div>
+  <label class="read-toggle"><input type="checkbox" data-read="exercises"> I've read this</label>
+</section>
+
+<!-- 20 -->
+<section class="chapter prose" id="glossary" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 20</span>
+    <h2>Glossary</h2>
+  </div>
+  <dl class="glossary">
+    <dt>Background worker</dt><dd>An extension's invisible page (a service worker) that reacts to events: tabs changing, messages, alarms. It runs in a process of its own and may stop when idle.</dd>
+    <dt>BaseWindow</dt><dd>An Electron window that holds views. Min's window holds the UI view plus the selected tab's view.</dd>
+    <dt>Breaking change</dt><dd>A change in a new version of a library that makes old code stop working, so the code has to be updated when you upgrade.</dd>
+    <dt>Browser engine</dt><dd>The part that turns HTML, CSS and JavaScript into pixels. Here, Chromium.</dd>
+    <dt>Chromium</dt><dd>The open-source engine behind Chrome, Edge, Brave and Electron.</dd>
+    <dt>Client Hints</dt><dd><code>Sec-CH-UA</code> headers that tell sites which browser you use, in addition to the user agent.</dd>
+    <dt>Content script</dt><dd>Code an extension adds to the websites it's allowed on, much like a userscript.</dd>
+    <dt>Context isolation</dt><dd>Running a preload in its own JavaScript world, so the page can't reach it.</dd>
+    <dt>contextBridge</dt><dd>Electron's safe way to hand values and functions across the two worlds. Userscripts get their Greasemonkey functions through it.</dd>
+    <dt>Cosmetic filter</dt><dd>An ad-blocking rule that hides elements with CSS instead of blocking downloads.</dd>
+    <dt>CRX</dt><dd>The file format of Chrome Web Store extensions: a zip file with a signed header. The developer's key in it decides the extension's id.</dd>
+    <dt>CSP</dt><dd>Content Security Policy, a response header that tells the page what it may load. Ad blockers sometimes add to it.</dd>
+    <dt>declarativeNetRequest</dt><dd>The way Chrome's newer (Manifest V3) extensions block or change network requests, by handing the browser a list of rules.</dd>
+    <dt>Deprecated</dt><dd>Still works, but marked for removal in a later version. Replace it before it's gone.</dd>
+    <dt>DevTools Protocol (CDP)</dt><dd>The interface DevTools uses to control Chromium. Scripts can use it too, through a remote debugging port.</dd>
+    <dt>Electron</dt><dd>Chromium plus Node.js, for writing desktop apps in JavaScript.</dd>
+    <dt>Filter list</dt><dd>A text file of ad-blocking rules, such as EasyList or uBlock Origin's filters.</dd>
+    <dt>Fuse</dt><dd>A switch baked into the Electron executable to turn off a feature for good.</dd>
+    <dt>Greasemonkey functions</dt><dd>The extra powers a userscript can ask for with <code>@grant</code>, such as <code>GM_setValue</code> and <code>GM_xmlhttpRequest</code>. Named after Greasemonkey, the first userscript manager.</dd>
+    <dt>Hibernation</dt><dd>Closing a background tab's view to free memory, while keeping the tab so it reloads when clicked.</dd>
+    <dt>IPC</dt><dd>Messages between processes, each with a channel name and plain data.</dd>
+    <dt>Isolated world, main world</dt><dd>Two separate sets of JavaScript variables over the same page. The preload uses the first, the site's own scripts the second.</dd>
+    <dt>Main process</dt><dd>The single, privileged process that starts first and controls windows, tabs, the network and files.</dd>
+    <dt>Manifest</dt><dd>An extension's <code>manifest.json</code>: its name, version, permissions and files.</dd>
+    <dt>Memory priority</dt><dd>Windows' ranking of whose memory to take first when RAM runs short, from 0 to 7 (normal is 5). Min gives background tabs 2.</dd>
+    <dt>Occlusion</dt><dd>A window being completely covered by other windows. Chromium can treat a covered window as hidden.</dd>
+    <dt>Preload script</dt><dd>Min code that runs inside every page before the page's own scripts, and can message the main process.</dd>
+    <dt>Private bytes</dt><dd>Memory Windows has reserved for one process, whether it's in RAM or not. Trimming doesn't lower it; closing the process does.</dd>
+    <dt>Profile (userData)</dt><dd>The folder holding settings, history, passwords and sessions: <code>%APPDATA%\Min</code>.</dd>
+    <dt>Renderer process</dt><dd>A process that shows web content: Min's UI, or a website.</dd>
+    <dt>Sandbox</dt><dd>A renderer locked away from the operating system: no files, no programs, no Node.js.</dd>
+    <dt>Scriptlet</dt><dd>A small script from a filter list that changes a site's JavaScript, for example to strip ad data.</dd>
+    <dt>Session</dt><dd>A set of cookies, cache and storage. Normal tabs share one; each private tab gets its own.</dd>
+    <dt>Site isolation</dt><dd>Chromium putting each website, and its cross-site frames, in separate processes.</dd>
+    <dt>SPA</dt><dd>A single-page app, like YouTube, that changes pages without reloading. That's why some code also listens for <code>pushState</code>.</dd>
+    <dt>Squirrel</dt><dd>The Windows installer and updater system Min's setup file uses.</dd>
+    <dt>Task</dt><dd>Min's name for a group of tabs.</dd>
+    <dt>User agent</dt><dd>The text a browser sends to identify itself, such as "Chrome/150 on Windows".</dd>
+    <dt>Userscript</dt><dd>A JavaScript file you install to change how certain websites look or work, described by its <code>==UserScript==</code> header.</dd>
+    <dt>webContents</dt><dd>Electron's object for one loaded page: navigate it, reload it, run code in it, listen to its events.</dd>
+    <dt>WebContentsView</dt><dd>A rectangle in a window that shows one webContents. Each Min tab has one.</dd>
+    <dt>webRequest</dt><dd>Electron's hooks into every network request of a session.</dd>
+    <dt>Working set</dt><dd>The part of a process's memory currently in physical RAM. Trimming shrinks it.</dd>
+  </dl>
+  <label class="read-toggle"><input type="checkbox" data-read="glossary"> I've read this</label>
+</section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  var KEY = 'inside-min-read'
+  var read = {}
+  try { read = JSON.parse(localStorage.getItem(KEY) || '{}') || {} } catch (e) { read = {} }
+
+  function save () { try { localStorage.setItem(KEY, JSON.stringify(read)) } catch (e) {} }
+  function paint () {
+    document.querySelectorAll('.toc a').forEach(function (a) {
+      var id = a.getAttribute('href').slice(1)
+      a.classList.toggle('is-read', !!read[id])
+    })
+  }
+  document.querySelectorAll('input[data-read]').forEach(function (box) {
+    var id = box.getAttribute('data-read')
+    box.checked = !!read[id]
+    box.addEventListener('change', function () { read[id] = box.checked; save(); paint() })
+  })
+  paint()
+
+  // keep the chapter list open on wide screens, collapsible on phones
+  var toc = document.getElementById('toc')
+  var wide = window.matchMedia('(min-width: 981px)')
+  function syncToc () { if (wide.matches) toc.open = true }
+  syncToc()
+  if (wide.addEventListener) wide.addEventListener('change', syncToc)
+
+  // highlight the chapter being read
+  var links = {}
+  document.querySelectorAll('.toc a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a })
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          Object.keys(links).forEach(function (k) { links[k].classList.remove('active') })
+          var link = links[entry.target.id]
+          if (link) link.classList.add('active')
+        }
+      })
+    }, { rootMargin: '-20% 0px -70% 0px' })
+    document.querySelectorAll('[data-chapter]').forEach(function (s) { observer.observe(s) })
+  }
+})()
+</script>

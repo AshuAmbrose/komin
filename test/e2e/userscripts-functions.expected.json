@@ -1,0 +1,409 @@
+{
+  "uiReady": true,
+  "wrap": "wrapped",
+  "uiList": [
+    "127.0.0.1.js",
+    "Auto grant",
+    "CSP GM",
+    "To disable",
+    "Manual GM",
+    "Misc",
+    "None",
+    "Remove me",
+    "Values",
+    "XHR"
+  ],
+  "values": {
+    "changes": [],
+    "count": 1,
+    "objAfterMutatingCopy": {
+      "a": [
+        1,
+        2
+      ]
+    },
+    "getValues": {
+      "x": 1,
+      "y": "two"
+    },
+    "list": [
+      "count",
+      "obj",
+      "x",
+      "y"
+    ],
+    "inside": {
+      "setValue": "function",
+      "xhrNotGranted": "undefined",
+      "info": "Values",
+      "handler": "Min",
+      "version": "1.0",
+      "unsafeWindowIsWindow": true,
+      "thisIsWindow": true,
+      "gm4": "function",
+      "metaStr": true
+    },
+    "pageSees": {
+      "GM_setValue": "undefined",
+      "GM": "undefined",
+      "GM_info": "undefined"
+    },
+    "gm4Value": 1
+  },
+  "xhr": {
+    "blocked": {
+      "error": "Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\""
+    },
+    "sameHostJSON": {
+      "status": 200,
+      "ok": true,
+      "finalUrl": "http://127.0.0.1:8765/api/json",
+      "hasHeaders": true
+    },
+    "crossOriginPOST": {
+      "method": "POST",
+      "xTest": "yes",
+      "contentType": "text/plain",
+      "origin": null,
+      "body": "hello body"
+    },
+    "document": {
+      "title": "Doc title",
+      "xmlTitle": "Heading"
+    },
+    "xml": "feed",
+    "arraybuffer": {
+      "isArrayBuffer": true,
+      "bytes": [
+        1,
+        2,
+        3,
+        250
+      ]
+    },
+    "promise": true,
+    "events": [
+      "loadstart",
+      "rs1",
+      "rs2",
+      "rs3",
+      "progress",
+      "rs4",
+      "load",
+      "loadend"
+    ],
+    "blob": {
+      "isBlob": true,
+      "size": 4,
+      "type": "application/octet-stream"
+    },
+    "formData": {
+      "multipart": true,
+      "hasField": true
+    },
+    "redirect": "http://127.0.0.1:8765/api/json",
+    "abort": true,
+    "timeout": true
+  },
+  "misc": {
+    "require": {
+      "libVarShared": 42,
+      "libGlobal": "loaded"
+    },
+    "resourceText": "resource text ✓",
+    "resourceURLScheme": "blob",
+    "dataURL": "data:text/plain;base64,cmVzb3V",
+    "addStyleReturnsElement": "STYLE",
+    "addElement": "gm-added",
+    "menuRuns": 0,
+    "menuId": "tbe2q48h5681",
+    "resourceFetch": "resource text ✓"
+  },
+  "none": {
+    "getValue": "undefined",
+    "info": "object",
+    "gmInfo": "object",
+    "gmGetValue": "undefined"
+  },
+  "auto": {
+    "setValue": "function",
+    "getValue": 1,
+    "addStyle": "function"
+  },
+  "style": "applied",
+  "legacy": 1,
+  "badRequireRan": false,
+  "menuCommands": [
+    "Count menu runs / Misc"
+  ],
+  "menuRuns": 1,
+  "clipboard": "min userscript clipboard test",
+  "openInTab": {
+    "before": 2,
+    "after": 3,
+    "openedURL": true,
+    "selectedStillGM": "http://127.0.0.1:8765/gm?1",
+    "afterClose": 2
+  },
+  "notificationDone": true,
+  "download": {
+    "script": "loaded",
+    "blocked": "Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\"",
+    "file": "download"
+  },
+  "secondTabCount": 2,
+  "valueChange": {
+    "otherTab": [
+      {
+        "key": "shared",
+        "newValue": 5,
+        "remote": true
+      }
+    ],
+    "sameTab": [
+      {
+        "key": "shared",
+        "newValue": 5,
+        "remote": false
+      }
+    ]
+  },
+  "valueFile": {
+    "count": "2",
+    "obj": "{\"a\":[1,2]}",
+    "x": "1",
+    "y": "\"two\"",
+    "shared": "5"
+  },
+  "afterReloadCount": 3,
+  "manualRun": "ran twice",
+  "manualValue": 1,
+  "csp": {
+    "gm": {
+      "getValue": "default"
+    },
+    "style": "applied"
+  },
+  "installPageURL": "min://app/pages/userscriptInstall/index.html?url=http%3A%2F%2F127.0.0.1%3A8765%2Finstall%2Ftest.user.js",
+  "installPage": {
+    "name": "Installed",
+    "meta": "1.0 · by Tester · From 127.0.0.1:8765",
+    "warnings": [
+      "Only install scripts you trust. A script can read and change everything on the pages it runs on."
+    ],
+    "permissions": "Runs on\n127.0.0.1:8765/installed*\nCan also\nSave its own data\nDownloads code and files from\n127.0.0.1:8765",
+    "button": "Install",
+    "codeShown": true
+  },
+  "historyAfterPrompt": [
+    "http://127.0.0.1:8765/back",
+    "min://app/pages/userscriptInstall/index.html?url=http%3A%2F%2F127.0.0.1%3A8765%2Finstall%2Ftest.user.js"
+  ],
+  "installStatus": "Installed. It runs the next time you open or reload a page it works on.",
+  "installedFile": [
+    "Installed.user.js"
+  ],
+  "registry": {
+    "enabled": true,
+    "sourceURL": "http://127.0.0.1:8765/install/test.user.js",
+    "installedAt": 1794172201269,
+    "updatedAt": 1794172201269,
+    "lastUpdateCheck": 1794172201269,
+    "hash": "59665ed5ba3bb86d4a0ddd6a5219c71d0bf63a9229f7944b0bfa508da6dfb331"
+  },
+  "afterDone": [
+    "http://127.0.0.1:8765/blank",
+    "http://127.0.0.1:8765/gm?1",
+    "http://127.0.0.1:8765/gm?2",
+    "http://127.0.0.1:8765/csp",
+    "http://127.0.0.1:8765/back"
+  ],
+  "afterDoneViews": [
+    "file:///<repo>/js/places/placesService.html",
+    "http://127.0.0.1:8765/back",
+    "http://127.0.0.1:8765/blank",
+    "http://127.0.0.1:8765/csp",
+    "http://127.0.0.1:8765/gm?1",
+    "http://127.0.0.1:8765/gm?2",
+    "min://app/index.html"
+  ],
+  "installedRuns": "1.0",
+  "update11": [
+    {
+      "version": "1.1",
+      "pending": null
+    }
+  ],
+  "update12": [
+    {
+      "version": "1.1",
+      "pending": {
+        "version": "1.2",
+        "url": "http://127.0.0.1:8765/install/test.user.js",
+        "reason": "permissions"
+      }
+    }
+  ],
+  "reviewPage": {
+    "heading": "Update user script",
+    "warnings": [
+      "This version asks for more than the one you have:Any websiteSend requests to other websites",
+      "This script can send requests to any website, signed in as you.",
+      "Only install scripts you trust. A script can read and change everything on the pages it runs on."
+    ],
+    "button": "Update"
+  },
+  "afterReviewVersion": "no pending update",
+  "installedRunsAfterUpdate": "1.2",
+  "updateEdited": [
+    {
+      "version": "1.2",
+      "pending": {
+        "version": "1.3",
+        "url": "http://127.0.0.1:8765/install/test.user.js",
+        "reason": "edited"
+      }
+    }
+  ],
+  "settingsList": [
+    {
+      "name": "127.0.0.1.js",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Installed",
+      "enabled": true,
+      "from": "web",
+      "pending": "edited"
+    },
+    {
+      "name": "Auto grant",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Bad require",
+      "enabled": true,
+      "from": "local",
+      "downloadError": "Integrity check failed: http://127.0.0.1:8765/lib.js#sha256=0000"
+    },
+    {
+      "name": "CSP GM",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "To disable",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Manual GM",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Misc",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "None",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Remove me",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "Values",
+      "enabled": true,
+      "from": "local"
+    },
+    {
+      "name": "XHR",
+      "enabled": true,
+      "from": "local"
+    }
+  ],
+  "settingsRendered": [
+    "127.0.0.1.js Older Min script (no metadata block) · Local file EditRemove",
+    "Installed 1.2 A script installed from the web Runs on: 127.0.0.1:8765/installed* · From 127.0.0.1:8765 Review update to version 1.3 EditRemove",
+    "Auto grant Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "Bad require Runs on: 127.0.0.1:8765/gm* · Local file Not running: a file it needs couldn't be downloaded (Integrity check failed: http://127.0.0.1:8765/lib.js#sha256=0000) EditRemove",
+    "CSP GM Runs on: 127.0.0.1:8765/csp · Local file EditRemove",
+    "To disable Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "Manual GM Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "Misc Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "None Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "Remove me Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "Values 1.0 Runs on: 127.0.0.1:8765/gm* · Local file EditRemove",
+    "XHR Runs on: 127.0.0.1:8765/gm* · Local file EditRemove"
+  ],
+  "afterDisableRemove": {
+    "disabledRan": false,
+    "removedRan": false,
+    "removedFileExists": false
+  },
+  "removedFileExists": false,
+  "otherPageBlocked": "Not allowed",
+  "localInstallPage": "file:///<run>/downloads/local-test.user.js",
+  "localInstallHistory": [
+    "min://app/pages/userscriptInstall/index.html?url=file%3A%2F%"
+  ],
+  "createdScript": "New script.user.js",
+  "createdFile": [
+    "// ==UserScript==",
+    "// @name        New script",
+    "// @namespace   min"
+  ],
+  "notepadClosed": "13616",
+  "mainLog": [
+    "http://127.0.0.1:8765/back -> null",
+    "http://127.0.0.1:8765/csp -> null",
+    "http://127.0.0.1:8765/gm?1 -> null",
+    "http://127.0.0.1:8765/gm?2 -> null",
+    "http://127.0.0.1:8765/installed -> null",
+    "http://127.0.0.1:8765/opened -> null"
+  ],
+  "serverRequests": [
+    "GET 127.0.0.1:8765/api/binary",
+    "GET 127.0.0.1:8765/api/html",
+    "GET 127.0.0.1:8765/api/json",
+    "GET 127.0.0.1:8765/api/redirect",
+    "GET 127.0.0.1:8765/api/slow",
+    "GET 127.0.0.1:8765/api/xml",
+    "GET 127.0.0.1:8765/back",
+    "GET 127.0.0.1:8765/blank",
+    "GET 127.0.0.1:8765/csp",
+    "GET 127.0.0.1:8765/download.bin",
+    "GET 127.0.0.1:8765/gm?1",
+    "GET 127.0.0.1:8765/gm?2",
+    "GET 127.0.0.1:8765/install/test.meta.js",
+    "GET 127.0.0.1:8765/install/test.user.js",
+    "GET 127.0.0.1:8765/installed",
+    "GET 127.0.0.1:8765/lib.js",
+    "GET 127.0.0.1:8765/opened",
+    "GET 127.0.0.1:8765/res.txt",
+    "POST 127.0.0.1:8765/api/echo",
+    "POST localhost:8765/api/echo"
+  ],
+  "mainProcessOutput": [
+    "failed to download userscript file Error: Integrity check failed: http://127.0.0.1:8765/lib.js#sha256=0000",
+    "    at checkUserscriptIntegrity (<repo>\\main.build.js:5755:22)",
+    "    at downloadUserscriptDependency (<repo>\\main.build.js:5769:3)",
+    "(node:4488) UnhandledPromiseRejectionWarning: Error: UnknownVizError",
+    "(Use `electron --trace-warnings ...` to show where the warning was created)",
+    "(node:4488) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 2)",
+    "(node:4488) UnhandledPromiseRejectionWarning: Error: UnknownVizError",
+    "(node:4488) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 3)",
+    "userscript request blocked: Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\"",
+    "userscript request blocked: Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\"",
+    "userscript request blocked: Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\"",
+    "userscript request blocked: Refused to connect to 127.0.0.2: the script needs \"// @connect 127.0.0.2\"",
+    "Error occurred in handler for 'userscripts-page': Error: Not allowed"
+  ]
+}

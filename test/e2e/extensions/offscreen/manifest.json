@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: offscreen",
+  "version": "1.0",
+  "description": "Test extension written for Min: a background worker with a hidden helper page (an offscreen document) that it sends work to.",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["offscreen"]
+}

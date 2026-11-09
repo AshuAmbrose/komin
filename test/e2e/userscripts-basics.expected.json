@@ -1,0 +1,186 @@
+{
+  "startupPage": {
+    "start": true,
+    "order": [
+      "start",
+      "body",
+      "end",
+      "idle",
+      "throws"
+    ]
+  },
+  "wrap": "wrapped",
+  "uiList": [
+    "127.0.0.1.js @ document-idle",
+    "Start @ document-start",
+    "Body @ document-body",
+    "End @ document-end",
+    "Idle @ document-idle",
+    "No frames @ document-start",
+    "Frame @ document-start",
+    "Excluded @ document-idle",
+    "CSP @ document-start",
+    "Menu @ context-menu",
+    "Throws @ document-idle",
+    "Syntax @ document-idle"
+  ],
+  "normalTab": {
+    "us": {
+      "order": [
+        "start",
+        "body",
+        "end",
+        "idle",
+        "throws"
+      ],
+      "startHadBody": false,
+      "startReadyState": "loading",
+      "bodyExisted": true,
+      "bodyReadyState": "loading",
+      "endReadyState": "interactive"
+    },
+    "page": {
+      "head": [
+        "start"
+      ],
+      "bodyEnd": [
+        "start",
+        "body"
+      ],
+      "dcl": [
+        "start",
+        "body",
+        "end"
+      ]
+    },
+    "noframesTop": true,
+    "excluded": false,
+    "menu": 0,
+    "legacyGlobal": 1,
+    "wrappedVarLeaked": false,
+    "newScript": false,
+    "frame": null
+  },
+  "iframe": {
+    "frameScript": true,
+    "noframesScript": false
+  },
+  "cspPage": {
+    "cspScript": true,
+    "startScript": true
+  },
+  "manualRun": "ran twice",
+  "menuCountAfterManualRun": 2,
+  "uiChangeEvents": [
+    13
+  ],
+  "afterAddingScript": {
+    "newScript": true,
+    "order": [
+      "start",
+      "body",
+      "end",
+      "idle",
+      "throws"
+    ]
+  },
+  "privateTabDefault": {
+    "ran": false,
+    "url": "http://127.0.0.1:8765/page?private"
+  },
+  "privateTabWithSetting": {
+    "ran": true
+  },
+  "uiChangeEventsAfterOff": [
+    13,
+    0
+  ],
+  "afterTurningOff": {
+    "ran": false
+  },
+  "mainLog": [
+    {
+      "frameUrl": "http://127.0.0.1:8765/page",
+      "top": true,
+      "private": false,
+      "ms": 0.4291,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://localhost:8765/frame",
+      "top": false,
+      "private": false,
+      "ms": 0.2712,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://127.0.0.1:8765/csp",
+      "top": true,
+      "private": false,
+      "ms": 0.1572,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://127.0.0.1:8765/page",
+      "top": true,
+      "private": false,
+      "ms": 0.1775,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://localhost:8765/frame",
+      "top": false,
+      "private": false,
+      "ms": 0.1291,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://127.0.0.1:8765/page?private",
+      "top": true,
+      "private": true,
+      "ms": 0.0662,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://localhost:8765/frame",
+      "top": false,
+      "private": true,
+      "ms": 0.0776,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://127.0.0.1:8765/page?private",
+      "top": true,
+      "private": true,
+      "ms": 0.1905,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://localhost:8765/frame",
+      "top": false,
+      "private": true,
+      "ms": 0.2054,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://127.0.0.1:8765/page",
+      "top": true,
+      "private": false,
+      "ms": 0.0394,
+      "scripts": null
+    },
+    {
+      "frameUrl": "http://localhost:8765/frame",
+      "top": false,
+      "private": false,
+      "ms": 0.0823,
+      "scripts": null
+    }
+  ],
+  "mainProcessOutput": [
+    "(node:16956) UnhandledPromiseRejectionWarning: Error: UnknownVizError",
+    "(node:16956) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 2)",
+    "(node:16956) UnhandledPromiseRejectionWarning: Error: UnknownVizError",
+    "(node:16956) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 3)"
+  ]
+}

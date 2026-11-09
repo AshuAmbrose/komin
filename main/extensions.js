@@ -138,7 +138,51 @@ function startChromeExtensions () {
     }
   })
 
+  // Loading or unloading any extension makes Chromium rebuild some API objects (chrome.runtime, tabs, extension, action,
+  // storage, permissions) in every running extension worker and page, dropping what the library and Min added to them:
+  // chrome.tabs.create was gone, and Dark Reader's popup never loaded. extensionSupport.js puts its own back when asked.
+  extensionSession.extensions.on('extension-loaded', scheduleExtensionAPIRestore)
+  extensionSession.extensions.on('extension-unloaded', scheduleExtensionAPIRestore)
+
   Object.values(viewMap).forEach(view => extensionsTabCreated(view))
+}
+
+let extensionAPIRestoreTimers = []
+
+function scheduleExtensionAPIRestore () {
+  extensionAPIRestoreTimers.forEach(clearTimeout)
+  // Chromium's rebuild reaches each process separately from Min's message: asked twice, soon and once it has surely
+  // arrived (putting back what's already there does nothing)
+  extensionAPIRestoreTimers = [250, 2000].map(delay => setTimeout(restoreExtensionAPIsEverywhere, delay))
+}
+
+function restoreExtensionAPIsEverywhere () {
+  if (!extensionSession) {
+    return
+  }
+  const running = extensionSession.serviceWorkers.getAllRunning()
+  Object.keys(running).forEach(function (versionId) {
+    if (!running[versionId].scope.startsWith('chrome-extension://')) {
+      return
+    }
+    const worker = extensionSession.serviceWorkers.getWorkerFromVersionID(Number(versionId))
+    if (worker && !worker.isDestroyed()) {
+      worker.send('min-extension-restore-apis')
+    }
+  })
+  // popups, options pages, side panels
+  webContents.getAllWebContents().forEach(function (contents) {
+    if (contents.isDestroyed() || !contents.mainFrame) {
+      return
+    }
+    contents.mainFrame.framesInSubtree.forEach(function (frame) {
+      if (frame.url.startsWith('chrome-extension://')) {
+        try {
+          frame.send('min-extension-restore-apis')
+        } catch (e) {} // a frame that has just gone
+      }
+    })
+  })
 }
 
 /* Low-resource mode for extensions' processes (viewManager.js, getTabProcessGroups) */
@@ -209,6 +253,7 @@ async function loadInstalledExtension (id) {
     if (!fs.existsSync(entry.path)) {
       throw new Error('its folder is missing: ' + entry.path)
     }
+    checkExtensionManifestVersion(parseExtensionManifest(fs.readFileSync(path.join(entry.path, 'manifest.json'))))
     const extension = await extensionSession.extensions.loadExtension(entry.path)
     if (extension.id !== id) {
       extensionSession.extensions.removeExtension(extension.id)
@@ -510,6 +555,14 @@ function registerInstalledExtension (id, details, options = {}) {
   return previous
 }
 
+// Manifest V2 (the older format: background pages, browser_action, blocking webRequest) isn't supported, as in Chrome
+// since 2025: refused at every way in, and an installed one isn't loaded (Settings shows why)
+function checkExtensionManifestVersion (manifest) {
+  if (!manifest || manifest.manifest_version !== 3) {
+    throw new Error(l('extensionManifestV2'))
+  }
+}
+
 /*
 A checked .crx: {crx, files, manifest, messages}. Throws if it isn't a valid, signed extension Min can run.
 options.id: the id it must have (a download for a known extension); options.webStore: it must be signed by the Chrome Web Store.
@@ -528,6 +581,7 @@ function readExtensionCrx (data, options = {}) {
     throw new Error('The extension has no manifest.json')
   }
   const manifest = parseExtensionManifest(manifestFile.data)
+  checkExtensionManifestVersion(manifest)
   if (manifest.minimum_chrome_version && compareExtensionVersions(manifest.minimum_chrome_version, process.versions.chrome) > 0) {
     throw new Error(l('extensionNeedsNewerBrowser').replace('%s', manifest.minimum_chrome_version))
   }
@@ -593,6 +647,7 @@ async function installCheckedExtension ({ crx, files, manifest, messages }, opti
 
 async function loadUnpackedExtension (folder) {
   const manifest = parseExtensionManifest(fs.readFileSync(path.join(folder, 'manifest.json')))
+  checkExtensionManifestVersion(manifest)
   const messages = readExtensionLocaleMessages(folder, manifest)
   const details = Object.assign({ source: 'unpacked', path: folder, name: getExtensionManifestText(manifest, 'name', messages), version: manifest.version }, getExtensionNetworkDetails(manifest))
   startChromeExtensions()
@@ -882,6 +937,9 @@ async function beginWebStoreInstall (event, details) {
   } catch (e) {
     return { result: 'manifest_error', error: 'Invalid manifest' }
   }
+  if (!storeManifest || storeManifest.manifest_version !== 3) {
+    return { result: 'manifest_error', error: l('extensionManifestV2') }
+  }
   const win = getExtensionTabWindow(event.sender)
   webStoreInstalling.add(id)
   try {
@@ -1095,7 +1153,7 @@ function showPendingExtensionUpdateNotification (name) {
 
 /*
 Toolbar buttons, popups, menus, options pages and keyboard commands. js/extensions.js draws a button for each extension
-with an action (manifest "action", or "browser_action" in MV2). The library keeps each action's title, icon, badge and
+with an action (manifest "action"). The library keeps each action's title, icon, badge and
 popup, overall and per tab, and tells observers when any of it or the active tab changes (startChromeExtensions); each
 window then gets its shown tab's buttons (extensions-toolbar), icons as data URLs. The library's own toolbar element,
 crx:// icons and English-only button menu aren't used. A click opens the extension's popup, a child window of Min's
@@ -1201,7 +1259,7 @@ function getExtensionToolbar (win) {
   const buttons = []
   extensions.forEach(function (extension) {
     const manifest = extension.manifest
-    if (typeof (manifest.manifest_version === 3 ? manifest.action : manifest.browser_action) !== 'object') {
+    if (typeof manifest.action !== 'object') {
       return
     }
     const action = actions.get(extension.id) || {}
@@ -1280,7 +1338,7 @@ ipc.on('extensions-toolbar-menu', function (event, args) {
     click: () => openTabForExtension({ url: homepage, active: true }).catch(() => {})
   }))
   // the extension's own items (chrome.contextMenus with the "action" context)
-  const items = chromeExtensions.ctx.store.buildMenuItems(extension.id, manifest.manifest_version === 3 ? 'action' : 'browser_action')
+  const items = chromeExtensions.ctx.store.buildMenuItems(extension.id, 'action')
   if (items.length > 0) {
     menu.append(new MenuItem({ type: 'separator' }))
     items.forEach(item => menu.append(item))
