@@ -918,7 +918,7 @@ sequenceDiagram
 
   <div class="warn">
     <span class="callout-label">A possible problem, not seen yet</span>
-    <p>When Min trims the whole app, it skips a tab that's playing sound or in a call. It doesn't skip the shared Chromium processes that tab relies on. With a tab playing audio, minimizing the installed Min trimmed the audio service (104 → 1 MB), the GPU process (236 → 1 MB) and the network service (62 → 0 MB), while the tab itself kept its 113 MB. Reading that memory back could cause a short audio dropout or video stutter, when you minimize and then every 90 seconds while Min stays in the background. Nobody has heard one yet. If someone does, the fix is a few lines in <code>getProtectedPids()</code> in <code>main/main.js</code>: while any tab plays media or is in a call, protect those processes too, plus the video-capture one. AGENTS.md section 10.4 has the details.</p>
+    <p>When Min trims the whole app, it skips a tab that's playing sound or in a call. It doesn't skip the shared Chromium processes that tab relies on. With a tab playing audio, minimizing the installed Min trimmed the audio service (104 → 1 MB), the GPU process (236 → 1 MB) and the network service (62 → 0 MB), while the tab itself kept its 113 MB. Reading that memory back could cause a short audio dropout or video stutter, when you minimize and then every 90 seconds while Min stays in the background. Nobody has heard one yet. If someone does, the fix is a few lines in <code>getProtectedPids()</code> in <code>main/main.js</code>: while any tab plays media or is in a call, protect those processes too, plus the video-capture one. AGENTS.md section 10.4 (<code>docs/agents/memory-and-background.md</code>) has the details.</p>
   </div>
 
   <div class="note">
@@ -1119,6 +1119,10 @@ sequenceDiagram
     <span class="callout-label">Version numbers</span>
     <p>The installer uses the version in <code>package.json</code>, still upstream's <code>1.35.7</code>. Squirrel may skip installing a version that's already installed, so raise the version (for example to <code>1.35.8</code>) when you ship a new build to an existing install.</p>
   </div>
+  <div class="note">
+    <span class="callout-label">Your everyday Min</span>
+    <p>Your Start-menu shortcut "Min" opens <code>dist/app/win-unpacked/Min.exe</code> straight from the build folder, not the installed copy (that one is still 1.35.8, under the "PalmerAL" shortcut). So packaging replaces the browser you use every day: quit it before a build, or the build can't replace its files. It keeps your profile either way.</p>
+  </div>
   <p>The one GitHub workflow (<code>.github/workflows/build-packages.yml</code>) builds packages for Windows, macOS and Linux when you start it by hand. Nothing runs automatically on a push.</p>
   <label class="read-toggle"><input type="checkbox" data-read="build"> I've read this</label>
 </section>
@@ -1237,7 +1241,7 @@ npm run test:e2e</pre>
   <p><code>test/e2e/README.md</code> lists every suite, what it checks and what it needs.</p>
   <div class="note">
     <span class="callout-label">Handing work between agents</span>
-    <p>Agents (even on different Claude accounts) share nothing but the repository. So each one starts by reading <code>AGENTS.md</code> and looking there for anything already measured or tried. Every test, measurement or diagnostic script goes into <code>test/e2e</code> from its first run, even a quick one, so nobody ever writes the same test twice: a new check into the suite it concerns, a diagnosis as an "info" check that records what it saw, and a fix for Electron's own behaviour also into <code>electron-workarounds</code>, which shows when a later Electron makes the fix unnecessary (it caught one on 9 November). Before stopping, an agent writes down what it changed, measured and rejected, and updates this guide's source, <code>docs/inside-min.html</code>, when the architecture changes. Nothing important is left only in a chat.</p>
+    <p>Agents (even on different Claude accounts) share nothing but the repository. So each one starts with <code>AGENTS.md</code>, which every session loads by itself: the rules, the commands, the mistakes already made and the work still open. The details of each part of Min (extensions, ad blocking, memory and so on) are in their own files in <code>docs/agents/</code>, which an agent reads only when its task touches that part, so a session doesn't carry everything all the time. That's where an agent looks first for anything already measured or tried. Shipping (commit, push, the pull request's text, the installer) is written down as a step-by-step skill, <code>.claude/skills/release/SKILL.md</code>, which you can start by typing <code>/release</code>. To look at the app themselves, agents run <code>node test/e2e/open.js</code>, which opens Min with a throwaway profile; <code>npm start</code> is yours, because it uses your dev profile. Every test, measurement or diagnostic script goes into <code>test/e2e</code> from its first run, even a quick one, so nobody ever writes the same test twice: a new check into the suite it concerns, a diagnosis as an "info" check that records what it saw, and a fix for Electron's own behaviour also into <code>electron-workarounds</code>, which shows when a later Electron makes the fix unnecessary (it caught one on 9 November). Before stopping, an agent writes down what it changed, measured and rejected, and updates this guide's source, <code>docs/inside-min.html</code>, when the architecture changes. Nothing important is left only in a chat.</p>
   </div>
 
   <h3>Errors you'll meet</h3>
@@ -1393,7 +1397,7 @@ npm run test:e2e</pre>
     <ul>
       <li>Support any extension, not a chosen few, because Min is meant for general release.</li>
       <li>Installing should be as easy as in Chrome, with a permission review.</li>
-      <li>Heavy extensions are the user's choice: Min shows their memory and CPU and warns, but doesn't block them.</li>
+      <li>Heavy extensions are the user's choice: Min is meant to show their memory and CPU and warn, but never block them. The showing and warning aren't built yet.</li>
       <li>With no extensions installed, Min must cost nothing extra.</li>
       <li>No old-style extensions (decided 9 November): like Chrome, Min refuses Manifest V2.</li>
     </ul>
