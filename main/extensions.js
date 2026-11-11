@@ -82,8 +82,8 @@ function startChromeExtensions () {
     session: extensionSession,
     createTab: openTabForExtension,
     selectTab: function (contents, win) {
-      // the library also calls this when Min itself reports a tab switch
-      const tabId = !minIsSelectingTab && getTabIDFromWebContents(contents)
+      // the library also calls this when Min itself reports a tab switch. A discarded tab is a stand-in (extensionTabs.js)
+      const tabId = !minIsSelectingTab && (contents.isExtensionStandIn ? contents.minTabId : getTabIDFromWebContents(contents))
       if (tabId) {
         sendIPCToWindow(win || getExtensionTabWindow(contents), 'extensions-select-tab', tabId)
       }
@@ -93,7 +93,7 @@ function startChromeExtensions () {
       if (contents.isDestroyed() || extensionTabsClosedByMin.has(contents)) {
         return
       }
-      const tabId = getTabIDFromWebContents(contents)
+      const tabId = contents.isExtensionStandIn ? contents.minTabId : getTabIDFromWebContents(contents)
       if (tabId) {
         sendIPCToWindow(win || getExtensionTabWindow(contents), 'extensions-close-tab', tabId)
       }
@@ -112,8 +112,11 @@ function startChromeExtensions () {
     assignTabDetails: function (details, contents) {
       details.favIconUrl = extensionTabFavicons.get(contents) || details.favIconUrl
       details.highlighted = details.active
+      // Min's tab order, and tabs without a page (extensionTabs.js)
+      assignExtensionTabDetails(details, contents)
     }
   })
+  startExtensionTabSync()
 
   // the library tells observers whenever an action (title, icon, badge, popup) or the active tab changes
   chromeExtensions.api.browserAction.observers.add({ isDestroyed: () => false, send: scheduleExtensionToolbarUpdate })
@@ -315,6 +318,10 @@ app.whenReady().then(async function () {
   }
   const enabled = Object.keys(registry).filter(id => registry[id].enabled)
   if (enabled.length === 0) {
+    // no extension can be controlling Min's settings (extensionAPIs.js): correct a value saved by an earlier run
+    if (settings.get('extensionsPasswordSavingOff') === true) {
+      settings.set('extensionsPasswordSavingOff', false)
+    }
     return
   }
   startChromeExtensions()
@@ -356,8 +363,11 @@ function extensionsTabCreated (view) {
   const win = getExtensionTabWindow(contents)
   const activeTab = store.windowToActiveTab.get(win)
   store.windowToActiveTab.set(win, contents)
+  // a tab listed as discarded gets its page back: the page replaces it (extensionTabs.js)
+  const replacedId = takeExtensionTabStandIn(contents)
   try {
     chromeExtensions.addTab(contents, win)
+    noteExtensionTabPageAdded(contents, replacedId)
   } finally {
     if (activeTab) {
       store.windowToActiveTab.set(win, activeTab)
@@ -417,6 +427,8 @@ function extensionsTabShown (view, win) {
 
 function extensionsTabDestroyed (contents) {
   extensionTabsClosedByMin.add(contents)
+  // closed, or hibernated: the UI's next tab list tells (extensionTabs.js)
+  noteExtensionTabPageClosing(contents)
 }
 
 // chrome.tabs.create (and windows.create): the UI adds the tab, and its view is returned
@@ -1249,8 +1261,9 @@ function getExtensionOptionsURL (id, manifest) {
 // {buttons: [{id, title, badgeText, badgeColor, icon}], commands: [{extensionId, name, combo}]} for a window
 function getExtensionToolbar (win) {
   const contents = getShownExtensionTab(win)
+  // tabList: the UI sends its tabs while extensions run (extensionTabs.js)
   if (!contents) {
-    return { buttons: [], commands: [] }
+    return { buttons: [], commands: [], tabList: extensionTabSyncOn }
   }
   const registry = getExtensionRegistry()
   const actions = chromeExtensions.api.browserAction.actionMap
@@ -1272,7 +1285,7 @@ function getExtensionToolbar (win) {
       icon: getExtensionActionIcon(extension, state.icon)
     })
   })
-  return { buttons, commands: getExtensionCommands(extensions) }
+  return { buttons, commands: getExtensionCommands(extensions), tabList: extensionTabSyncOn }
 }
 
 // the keyboard shortcuts extensions suggest in their manifest (commands.*.suggested_key); js/extensions.js skips any Min

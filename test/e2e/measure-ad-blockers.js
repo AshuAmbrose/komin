@@ -47,6 +47,7 @@ const rows = [
   ['Requests to ad/tracker hosts that loaded (5 sites)', c => both(c, r => sum(r.sites, 'adTrackerLoaded'))],
   ['Requests blocked (5 sites)', c => both(c, r => sum(r.sites, 'blocked'))],
   ['Requests neutralized by redirect (5 sites)', c => both(c, r => sum(r.sites, 'redirectedAway'))],
+  ['Stand-ins Chromium refused, so blocked instead (5 sites)', c => both(c, r => sum(r.sites, 'standInRefused'))],
   ['Visible ad slots (5 sites)', c => both(c, r => sum(r.sites, 'visibleAdSlots'))],
   ['YouTube videos that showed an ad (of 3)', c => both(c, r => r.youtube.filter(v => v.adSeen).length)],
   ['YouTube anti-adblock warnings', c => both(c, r => r.youtube.filter(v => v.antiAdblockWarning).length)],

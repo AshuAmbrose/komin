@@ -563,8 +563,10 @@ function getTabProcessGroups () {
   const inactivePids = new Set()
   // a process can be shared between tabs, so one that also serves a protected tab (or the browser UI) is never trimmed
   const protectedPids = new Set()
-  // any of Min's windows focused, popups and sign-in windows included
-  const minInUse = BaseWindow.getFocusedWindow() !== null
+  // any of Min's windows focused, popups and sign-in windows included, unless it's minimized: Windows can leave focus on
+  // a minimized window when nothing else takes it
+  const focusedWindow = BaseWindow.getFocusedWindow()
+  const minInUse = focusedWindow !== null && !focusedWindow.isMinimized()
   // the "trim background tabs while you use Min" setting (Settings > Performance); off, tabs are trimmed only while Min isn't in use
   const trimWhileInUse = settings.get('trimBackgroundTabs') !== false
 

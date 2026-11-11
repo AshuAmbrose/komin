@@ -16,9 +16,18 @@ const modules = [
   'js/preload/translate.js',
 ]
 
+/* Ghostery's page watcher (DOMMonitor, for the generic hiding rules in js/preload/default.js): its standalone build from
+   @ghostery/adblocker-content (Mozilla Public License 2.0), unchanged, wrapped so it gives its functions to
+   ghosteryContent instead of the preload's own module objects. */
+function ghosteryContentScript () {
+  const folder = path.dirname(require.resolve('@ghostery/adblocker-content/package.json'))
+  const code = fs.readFileSync(path.join(folder, 'dist/adblocker.umd.min.js'), 'utf-8').replace(/\/\/# sourceMappingURL=.*$/m, '')
+  return 'var ghosteryContent = (function () {\nvar exports = {}\nvar module = { exports: exports }\n' + code + '\nreturn module.exports\n})();\n'
+}
+
 function buildPreload() {
   /* concatenate modules */
-  let output = ''
+  let output = ghosteryContentScript()
   modules.forEach(function (script) {
     output += fs.readFileSync(path.resolve(__dirname, '../', script)) + ';\n'
   })

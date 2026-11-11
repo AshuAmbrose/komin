@@ -30,7 +30,8 @@ const modules = [
   'main/userscriptInstall.js',
   'js/util/extensionPackages.js',
   'main/extensions.js',
-  'main/extensionAPIs.js'
+  'main/extensionAPIs.js',
+  'main/extensionTabs.js'
 ]
 
 function buildMain () {

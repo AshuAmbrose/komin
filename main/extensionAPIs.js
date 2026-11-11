@@ -106,6 +106,11 @@ function registerExtensionAPIs () {
     if (typeof tabId !== 'number') {
       return undefined
     }
+    // already discarded (extensionTabs.js)
+    const standIn = chromeExtensions.ctx.store.getTabById(tabId)
+    if (standIn && standIn.isExtensionStandIn) {
+      return chromeExtensions.api.tabs.getTabDetails(standIn)
+    }
     const contents = getExtensionAPITab(tabId)
     const minTabId = getTabIDFromWebContents(contents)
     const shown = windows.getAll().some(win => windows.getState(win).selectedView === minTabId)
@@ -447,7 +452,9 @@ function registerExtensionDownloadAPIs (handle) {
   }
 }
 
-/* Privacy settings: read and set like Chrome's (the last extension to set one controls it). They don't change Min yet. */
+/* Privacy settings: read and set like Chrome's (the last extension to set one controls it). Each extension's choices are
+   kept in extensions.json (`privacy`), as Chrome keeps them, and apply while it's loaded. Min follows one so far:
+   services.passwordSavingEnabled off (password managers set it) turns off Min's own offer to save passwords. */
 
 const EXTENSION_PRIVACY_DEFAULTS = {
   'network.networkPredictionEnabled': true,
@@ -473,6 +480,32 @@ const EXTENSION_PRIVACY_DEFAULTS = {
   'websites.topicsEnabled': false
 }
 const extensionPrivacySettings = new Map() // name: {extensionId, value}
+
+// what Min itself does with them: the UI reads extensionsPasswordSavingOff (js/passwordManager/passwordCapture.js)
+function applyExtensionPrivacySettingsToMin () {
+  const passwords = extensionPrivacySettings.get('services.passwordSavingEnabled')
+  const off = !!passwords && passwords.value === false
+  if (settings.get('extensionsPasswordSavingOff') !== off) {
+    settings.set('extensionsPasswordSavingOff', off)
+  }
+}
+
+function saveExtensionPrivacySetting (extensionId, name, value) {
+  const entry = getExtensionRegistry()[extensionId]
+  if (!entry) {
+    return
+  }
+  entry.privacy = Object.assign({}, entry.privacy)
+  if (value === undefined) {
+    delete entry.privacy[name]
+  } else {
+    entry.privacy[name] = value
+  }
+  if (Object.keys(entry.privacy).length === 0) {
+    delete entry.privacy
+  }
+  saveExtensionRegistry()
+}
 
 function getExtensionPrivacySetting (extension, name) {
   if (!(name in EXTENSION_PRIVACY_DEFAULTS)) {
@@ -503,7 +536,9 @@ function registerExtensionPrivacyAPIs (handle) {
       throw new Error('The value for ' + name + ' must be a ' + typeof EXTENSION_PRIVACY_DEFAULTS[name] + '.')
     }
     extensionPrivacySettings.set(name, { extensionId: extension.id, value })
+    saveExtensionPrivacySetting(extension.id, name, value)
     notify(name)
+    applyExtensionPrivacySettingsToMin()
   })
   handle('privacy.clear', function ({ extension }, name) {
     requireExtensionPermission(extension, 'privacy')
@@ -513,6 +548,19 @@ function registerExtensionPrivacyAPIs (handle) {
       extensionPrivacySettings.delete(name)
       notify(name)
     }
+    saveExtensionPrivacySetting(extension.id, name, undefined)
+    applyExtensionPrivacySettingsToMin()
+  })
+  // an extension's saved choices apply again when it loads (at startup in install order, so the newest wins, as in Chrome)
+  extensionSession.extensions.on('extension-loaded', function (event, extension) {
+    const entry = getExtensionRegistry()[extension.id]
+    const saved = (entry && entry.privacy) || {}
+    for (const name of Object.keys(saved)) {
+      if (name in EXTENSION_PRIVACY_DEFAULTS && typeof saved[name] === typeof EXTENSION_PRIVACY_DEFAULTS[name]) {
+        extensionPrivacySettings.set(name, { extensionId: extension.id, value: saved[name] })
+      }
+    }
+    applyExtensionPrivacySettingsToMin()
   })
   extensionSession.extensions.on('extension-unloaded', function (event, extension) {
     for (const [name, set] of extensionPrivacySettings) {
@@ -520,6 +568,7 @@ function registerExtensionPrivacyAPIs (handle) {
         extensionPrivacySettings.delete(name)
       }
     }
+    applyExtensionPrivacySettingsToMin()
   })
 }
 

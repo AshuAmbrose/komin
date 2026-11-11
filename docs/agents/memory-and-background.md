@@ -4,7 +4,7 @@ Section 10.4 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
 
 **Whole-app trimming** (`main/main.js`). `trimMemoryNow` runs `ext/windows/trimMemory.exe <procName> --exclude <pids>` (`EmptyWorkingSet`).
 
-- When: on minimize, 4 s after blur, and every 90 s while unfocused (`startBackgroundTrimming`).
+- When (a minimized window counts as not in use even if Windows leaves focus on it, since 2026-11-09): on minimize, 4 s after blur, and every 90 s while unfocused (`startBackgroundTrimming`).
 - Skipped when:
   - downloads are active;
   - the window is focused;
@@ -18,7 +18,7 @@ Section 10.4 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
 - Inactive processes are trimmed and given **low memory priority** (`trimMemory.exe --memory-priority low <pids>`). They're remembered in `lowMemoryPriorityPids`.
 - It includes their cross-site frame processes (ads, embeds), found with `getFramePids`, which uses `webContents.mainFrame.framesInSubtree` and each frame's `osProcessId`.
 - It never touches a process that also serves a protected tab (selected, media or capture, or used in the last 30 s) or the browser UI. Chromium can share one process between tabs.
-- **The setting `trimBackgroundTabs`** (Settings → Performance, on unless set to false): off, every tab counts as protected while any Min window is focused (`BaseWindow.getFocusedWindow()`, popups and sign-in windows included), so background tabs are trimmed only while Min isn't in use. Whole-app trimming and hibernation don't depend on it. The Settings page shows it on Windows only (`navigator.platform`), the only platform that trims. Measured (dev build, 2026-11-07, three test tabs of 100–200 MB, two runs): on and focused, they dropped to 2–19 MB within 100 s; off and focused, they kept their memory; off and minimized, 0–20 MB within 70 s. Going back to a trimmed tab with plenty of free RAM: redrawn in 15–25 ms, its 80 MB read back in about 20 ms. With RAM short, Windows may have reused the memory and it comes back from disk (not measured).
+- **The setting `trimBackgroundTabs`** (Settings → Performance, on unless set to false): off, every tab counts as protected while any Min window is focused and not minimized (`BaseWindow.getFocusedWindow()`, popups and sign-in windows included; Windows can leave focus on a minimized window when nothing else takes it, and until 2026-11-09 that kept tabs untrimmed: `performance-settings` measured the minimized window focused 100% of 70 s and the tabs at 108, 84, 102 MB, then 1, 20, 1 MB with the fix; measured again 2026-11-10 below), so background tabs are trimmed only while Min isn't in use. Whole-app trimming and hibernation don't depend on it. The Settings page shows it on Windows only (`navigator.platform`), the only platform that trims. Measured (dev build, 2026-11-07, three test tabs of 100–200 MB, two runs): on and focused, they dropped to 2–19 MB within 100 s; off and focused, they kept their memory; off and minimized, 0–20 MB within 70 s. Going back to a trimmed tab with plenty of free RAM: redrawn in 15–25 ms, its 80 MB read back in about 20 ms. With RAM short, Windows may have reused the memory and it comes back from disk (not measured).
 - **Normal priority comes back** (`trimMemory.exe --no-trim --memory-priority normal <pids>`):
   - straight away when the tab is selected (`setView`);
   - when it starts playing media (`media-started-playing` in `main.js`);
@@ -26,6 +26,17 @@ Section 10.4 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
   - otherwise at the next 60 s pass, for any lowered process that is protected again. Pids of exited processes are dropped then too.
 - **What memory priority does:** pages a process loads after the change get that priority. Windows trims low-priority pages first and reuses them first from its standby cache. A trimmed background tab's pages therefore come back at low priority and are the first RAM Windows gives to another program. It never reduces Min's reserved memory, and does nothing while RAM is plentiful.
 - **Chromium's own settings:** it already sets background tabs' CPU priority to Idle, but leaves every process at normal memory priority (5) (checked 2026-10-29). Min can raise and lower renderer memory priority from outside: renderer processes accept `SetProcessInformation`.
+
+- **What the minimized fix saves** (measured 2026-11-10, `measure-minimized-focus.js <new|old>`, three runs each, alternating; `old` counts a focused minimized window as in use again, with `test/e2e/old-behaviour.js`). Dev build, four big local pages (about 20,000 elements each, in four processes) and the test extension installed, `trimBackgroundTabs` off, Windows leaving focus on the minimized window (emulated, so every run sees it). After 80 s minimized:
+
+  | Working set (what Task Manager shows) | Before minimizing | With the fix | Without (as on master) |
+  |---|---|---|---|
+  | All of Min | 1,422–1,424 MB | 726 MB [703–758] | 1,402 MB [1,356–1,425] |
+  | The four tabs' processes | 786–787 MB | 199 MB [196–200] | 777 MB [745–784] |
+  | The other renderers (extension, history service) | 188–190 MB | 87 MB [87–98] | 190 MB [187–190] |
+  | The UI | 112–115 MB | 110 MB | 113 MB |
+
+  The tabs' 199 MB is mostly the tab that was shown, never trimmed. Private memory (what Min has reserved) was the same either way, 806 against 816 MB: trimming moves pages out of RAM, it doesn't free them ("Trimmed isn't the same as freed" in the guide). Processor time while minimized: 0.59 s [0.43–0.6] with the fix, 0.30 s without (0.7% against 0.4% of one core over 80 s): the trim's own work, once. The whole-app trim, which the fix also lets run, works only in the packaged app, so this measured the tab and extension trimming only (section 15).
 
 **Hibernation** (`checkSmartHibernation`, every 5 min). It sends `hibernateTab`; the UI then destroys the view, and the tab reloads when selected.
 
@@ -70,7 +81,7 @@ Section 10.4 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
   
   The test page's timers and worker stopped exactly while frozen and carried on after resuming, with no reload. Not built: little to gain for most pages, and a frozen page also stops legitimate background work (uploads, chats without notification permission, a web app syncing). Chrome decides when freezing is safe with checks Electron doesn't have (Web Locks, IndexedDB transactions and the like). A narrow use if wanted later: tabs that hibernation can't close only because of unsaved input or an `onbeforeunload` handler, frozen instead of left running.
 
-**Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden: 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43. On Electron 45 the covered case still measures 0 fps; the visible case and the flicker check haven't been redone (the screen was locked during testing, which hides every window). Audio, calls and notifications continue.
+**Covered windows idle.** Upstream's `disable-backgrounding-occluded-windows` switch was removed. A fully covered window's pages are treated as hidden (so is every page while the screen is locked or the display has turned off: `document.visibilityState` was `hidden` with Min's window on top, 2026-11-10, AGENTS.md pitfall 54): 0 fps and 0% CPU/GPU, versus about 69 fps and about 40% of a core before. The user confirmed there's no focus flicker on Electron 43, and again on 45 (their everyday 1.35.9, 2026-11-09). Measured on Electron 45.2.2 with the screen unlocked (2026-11-09, suite `covered-window`: a page drawing on every frame, covered by a plain window from `test/e2e/cover-screen.ps1`): visible 60 fps, the page's renderer 9% of a core, GPU 19%; half covered the same (60 fps, still `visible`); fully covered 0 fps, `hidden`, page and GPU 0%, all of Min 0.8%; uncovered, drawing again after 52 ms at 60 fps. Audio, calls and notifications continue.
 
 **Other:**
 

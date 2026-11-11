@@ -4,18 +4,23 @@
 //        MIN_TEST_PACKAGED=1 npm run test:e2e   the same suites against dist/app/win-unpacked/Min.exe (build it first),
 //                                             plus whole-app-trim, which only the packaged app can do
 // Each suite writes test/e2e/results/<suite>.json (every check) and <suite>.log (what Min printed).
-const { spawnSync } = require('child_process')
+// While it runs, the display is kept on (keep-display-on.ps1), as a video player would: Windows turns an idle display
+// off after a few minutes, and then every page counts as hidden (AGENTS.md pitfall 54). MIN_TEST_DISPLAY=leave skips it.
+const { spawn, spawnSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 
 const REGRESSION = [
   'adblock-first-start',
+  'adblock-cosmetic',
   'extensions-core',
   'extensions-webstore',
   'extensions-toolbar',
   'extensions-real-popups',
   'extensions-network',
   'extensions-apis',
+  'extensions-tabs',
+  'extensions-passwords',
   'extensions-startup',
   'extensions-footprint',
   'extensions-youtube',
@@ -25,10 +30,20 @@ const REGRESSION = [
   'userscripts-real',
   'performance-defaults',
   'performance-settings',
+  'covered-window',
+  'session-restore',
   'electron-workarounds'
 ]
 const packaged = process.env.MIN_TEST_PACKAGED === '1'
 const suites = process.argv.length > 2 ? process.argv.slice(2) : REGRESSION.concat(packaged ? ['whole-app-trim'] : [])
+
+const env = { ...process.env }
+if (process.platform === 'win32' && process.env.MIN_TEST_DISPLAY !== 'leave') {
+  const keeper = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'keep-display-on.ps1'), '-WatchPid', String(process.pid)], { stdio: 'ignore', windowsHide: true })
+  keeper.unref()
+  // the harness records it in each result's display (likelyOff only says how long since the last input)
+  env.MIN_TEST_DISPLAY_KEPT_ON = '1'
+}
 
 const summary = []
 for (const suite of suites) {
@@ -40,7 +55,7 @@ for (const suite of suites) {
   }
   console.log('\n=== ' + suite + (packaged ? ' (packaged)' : ''))
   const start = Date.now()
-  const run = spawnSync(process.execPath, [file], { stdio: 'inherit', env: process.env })
+  const run = spawnSync(process.execPath, [file], { stdio: 'inherit', env })
   let result = 'no results'
   try {
     const out = JSON.parse(fs.readFileSync(path.join(__dirname, 'results', suite + '.json'), 'utf8'))

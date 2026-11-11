@@ -386,8 +386,9 @@ function createWindowWithBounds (bounds, customArgs) {
     if (hasActiveDownloads()) {
       return
     }
-    // 2. Never trim if the window is currently focused
-    if (BaseWindow.getFocusedWindow() === newWin) {
+    // 2. Never trim if the window is currently focused. Windows can leave focus on a window that was minimized (when
+    // nothing else takes it), and minimized counts as not in use
+    if (BaseWindow.getFocusedWindow() === newWin && !newWin.isMinimized()) {
       return
     }
     // 3. Never trim if visible on a secondary monitor in a multi-display setup
@@ -657,6 +658,18 @@ ipc.on('handoffUpdate', function(e, data) {
 
 ipc.on('quit', function () {
   app.quit()
+})
+
+// windows ask their UI to save the session before they close (windowManagement.js); Quit closes them all
+app.on('before-quit', function () {
+  windows.quitting = true
+})
+
+ipc.on('session-saved-before-close', function (e) {
+  const entry = windows.openWindows.find(w => getWindowWebContents(w.win).id === e.sender.id)
+  if (entry && entry.afterSessionSaved) {
+    entry.afterSessionSaved()
+  }
 })
 
 ipc.on('tab-state-change', function(e, events) {

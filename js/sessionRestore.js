@@ -235,7 +235,7 @@ const sessionRestore = {
   initialize: function () {
     setInterval(sessionRestore.save, 30000)
 
-    window.onbeforeunload = function (e) {
+    function saveBeforeClosing () {
       sessionRestore.save(true, true)
       //workaround for notifying the other windows that the task open in this window isn't open anymore.
       //This should ideally be done in windowSync, but it needs to run synchronously, which windowSync doesn't
@@ -243,6 +243,15 @@ const sessionRestore = {
         ['task-updated', tasks.getSelected().id, 'selectedInWindow', null]
       ])
     }
+    window.onbeforeunload = saveBeforeClosing
+    // main asks before closing this window or quitting: this page isn't unloaded then (main/windowManagement.js)
+    ipc.on('save-session-before-close', function () {
+      try {
+        saveBeforeClosing()
+      } finally {
+        ipc.send('session-saved-before-close')
+      }
+    })
 
     ipc.on('read-tab-state', function (e) {
       ipc.send('return-tab-state', tasks.getCopyableState())

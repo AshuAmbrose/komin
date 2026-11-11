@@ -1,7 +1,8 @@
 /* Chrome extensions run in main (main/extensions.js, main/extensionAPIs.js). This draws their toolbar buttons and runs
    their keyboard shortcuts; opens, switches to and closes tabs when an extension asks (chrome.tabs.create,
    update({active: true}), remove; windows.create); makes room for an extension's side panel and draws its title bar;
-   searches (chrome.search) and speaks (chrome.tts) for them. */
+   searches (chrome.search) and speaks (chrome.tts) for them; while extensions run, sends main this window's tabs in order
+   (main/extensionTabs.js). */
 
 var webviews = require('webviews.js')
 var browserUI = require('browserUI.js')
@@ -16,6 +17,9 @@ const extensions = {
   registeredCombos: new Set(),
   // state: {buttons: [{id, title, badgeText, badgeColor, icon}], commands: [{extensionId, name, combo}]} from main
   showToolbar: function (state) {
+    if (state.tabList) {
+      extensions.startTabList()
+    }
     const buttons = JSON.stringify(state.buttons)
     if (buttons !== extensions.renderedButtons) {
       extensions.renderedButtons = buttons
@@ -190,8 +194,33 @@ const extensions = {
       speechSynthesis.speak(utterance)
     }
   },
+  // Min's tabs as extensions should see them: every task's tabs in order (private tabs never), sent after each change
+  sendingTabList: false,
+  startTabList: function () {
+    if (extensions.sendingTabList) {
+      return
+    }
+    extensions.sendingTabList = true
+    const send = debounce(function () {
+      ipc.send('extensions-tab-list', tasks.map(task => ({
+        selectedHere: task.selectedInWindow === windowId,
+        selectedInAnyWindow: !!task.selectedInWindow,
+        tabs: task.tabs.get().filter(tab => !tab.private).map(tab => ({
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+          muted: !!tab.muted,
+          favicon: tab.favicon ? tab.favicon.url : undefined,
+          hasView: webviews.hasViewForTab(tab.id)
+        }))
+      })))
+    }, 100)
+    tasks.on('*', send)
+    send()
+  },
   initialize: function () {
     ipc.invoke('extensions-toolbar-get').then(extensions.showToolbar)
+    ipc.on('extensions-tab-list-wanted', () => extensions.startTabList())
     ipc.on('extensions-toolbar', (e, state) => extensions.showToolbar(state))
 
     ipc.on('extensions-open-tab', function (e, data) {

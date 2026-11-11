@@ -19,7 +19,7 @@ The maintainer asks for this in their own words ("commit push give PR content an
   - AGENTS.md: section 0 "Where things stand", and section 15 for what's left.
   - The subsystem's file in `docs/agents/`.
   - `test/e2e/README.md` for new or changed suites.
-  - `docs/inside-min.html` if the architecture changed. The guide is published at https://claude.ai/artifact/GKB471fRDS4Sd378KSeN2y on the maintainer's account. Republish it if your tools can publish to that link; otherwise tell them to.
+  - `docs/inside-min.html` if the architecture changed. The guide is published at https://claude.ai/artifact/NxciyPurmBsnmboVChxNr1 on the maintainer's account. Republish it if your tools can publish to that link; otherwise tell them to.
 
 ## 2. Commit, leaving out the version line
 

@@ -110,10 +110,12 @@ const select = (u, url) => u.evaluate(`ipc.emit('extensions-select-tab', {}, tab
 
     // trimming off, Min minimized: background tabs are trimmed at the next pass
     await main.evaluate(`(() => { const win = ${WIN}; win.setAlwaysOnTop(false); win.minimize(); return 1 })()`)
-    await sleep(70000)
+    // Windows sometimes leaves focus on a minimized window (AGENTS.md section 13): then Min still counts as in use
+    const shareMinimized = await focusedShare(main, 70000)
     const offMinimized = await workingSets(main)
+    const minimizedState = await main.evaluate(`(() => { const win = ${WIN}; return { minimized: win.isMinimized(), focusedWhileMinimized: ${JSON.stringify(Math.round(shareMinimized * 100) + '%')} } })()`)
     // trimmed = under 30 MB of a 200 MB page still in RAM (what the page touches again after a trim comes back in)
-    check('trimming off, minimized: background tabs trimmed within 70 s', offMinimized.every(mb => mb !== null && mb < 30), offMinimized)
+    check('trimming off, minimized: background tabs trimmed within 70 s', offMinimized.every(mb => mb !== null && mb < 30), { workingSets: offMinimized, ...minimizedState })
 
 
     u.close()

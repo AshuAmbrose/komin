@@ -680,10 +680,12 @@ usageStatisticsCheckbox.addEventListener('change', function (e) {
   settings.set('collectUsageStats', this.checked)
 })
 
-/* performance settings (trimming on unless turned off, the JavaScript option off unless turned on) */
+/* performance settings (trimming on unless turned off, the JavaScript option and hiding ad spaces while pages load off
+   unless turned on) */
 
 var trimBackgroundTabsCheckbox = document.getElementById('checkbox-trim-background-tabs')
 var optimizeJavaScriptCheckbox = document.getElementById('checkbox-optimize-javascript')
+var hideAdSpacesWhileLoadingCheckbox = document.getElementById('checkbox-hide-ad-spaces-while-loading')
 
 // tabs are trimmed on Windows only
 if (navigator.platform.startsWith('Win')) {
@@ -706,6 +708,15 @@ settings.get('optimizeJavaScriptForSize', function (value) {
 optimizeJavaScriptCheckbox.addEventListener('change', function (e) {
   settings.set('optimizeJavaScriptForSize', this.checked)
   showRestartRequiredBanner()
+})
+
+settings.get('hideAdSpacesWhileLoading', function (value) {
+  hideAdSpacesWhileLoadingCheckbox.checked = value === true
+})
+
+// read by main as each page starts (main/filtering.js, cosmetic-filters-start): pages loaded after the change
+hideAdSpacesWhileLoadingCheckbox.addEventListener('change', function (e) {
+  settings.set('hideAdSpacesWhileLoading', this.checked)
 })
 
 /* default search engine setting */

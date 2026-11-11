@@ -12,10 +12,10 @@ Section 10.6 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
   - **Startup and tabs:** `startupTabOption`, `newWindowOption`, `openTabsInForeground`, `enableAutoplay`, `restartNow`
   - **Search and input:** `searchEngine`, `customBangs`, `keyMap`, `userSelectedLanguage`
   - **Passwords:** `passwordManager`, `passwordsNeverSaveDomains`, `1passwordDeviceID`
-  - **Extensions:** `extensionsFilterNetwork` (an extension that filters requests blocks ads in normal tabs instead of Min), `extensionsFilteringNetworkNow` (derived by main: that is happening now; for the UI)
-  - **Features:** `readerData`, `userscriptsEnabled`, `userscriptsInPrivateTabs`, `lastBookmarksBackup`, `phishingWhitelist`, `proxy`
+  - **Extensions:** `extensionsFilterNetwork` (an extension that filters requests blocks ads in normal tabs instead of Min), `extensionsFilteringNetworkNow` (derived by main: that is happening now; for the UI), `extensionsPasswordSavingOff` (derived by main: an extension turned off the browser's password saving, so Min doesn't offer to save; section 10.9)
+  - **Features:** `readerData`, `userscriptsEnabled`, `userscriptsInPrivateTabs`, `lastBookmarksBackup`, `proxy` (`phishingWhitelist` belonged to the removed phishing page; old profiles may still have it)
   - **PDF viewer:** `pdfDayTheme`, `pdfNightTheme`, `PDFInvertColors`
-  - **Performance** (Settings → Performance): `trimBackgroundTabs` (on unless false), `optimizeJavaScriptForSize` (off unless true; startup only, so the Settings page shows the restart notice)
+  - **Performance** (Settings → Performance): `trimBackgroundTabs` (on unless false), `optimizeJavaScriptForSize` (off unless true; startup only, so the Settings page shows the restart notice), `hideAdSpacesWhileLoading` (off unless true; read by main as each page starts, `cosmetic-filters-start`, so it applies to the next page; section 10.2)
   - **Updates and statistics:** `updateNotificationsEnabled`, `collectUsageStats`, `usageData`, `clientID`, `installTime`
 - **Adding a setting** (as `trimBackgroundTabs` was, commit `186e829a`):
   1. Pick a key and its default. A setting nobody has changed reads as `undefined`, so the default lives in each check: `value !== false` for on by default, `value === true` for off by default. Add the key to the list above.

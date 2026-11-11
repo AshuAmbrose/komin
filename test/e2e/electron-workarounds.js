@@ -4,8 +4,12 @@
 // separate object (pitfall 17)? And a rules-only extension loaded straight into Electron, without Min's install path:
 // are its rulesets marked "enabled" switched on (pitfall 26)? Also off: Min putting back the API objects Chromium rebuilds
 // when another extension loads (pitfall 47) and its chrome.tabs constants (pitfall 48): still missing without Min?
-// A PASS here means "the workaround is still needed". A FAIL means Electron changed: check whether Min's workaround can go.
-const t = require('./harness')({ name: 'electron-workarounds', minutes: 8 })
+// And with Min's tab list for extensions off (main/extensionTabs.js, switched off in main.build.js): does the library on its
+// own still list tabs in the order their pages were created, number the tabs a query matched, and drop a tab without a page
+// (pitfall 51)?
+// A PASS here means "the workaround is still needed". A FAIL means Electron or the library changed: check whether Min's
+// workaround can go.
+const t = require('./harness')({ name: 'electron-workarounds', minutes: 10 })
 const { PAGE, sleep, check, finish, waitFor, target, launch, quit, ui } = t
 // each switch-off must find its code, or the run would test nothing
 const switchOff = (text, code, replacement) => {
@@ -22,7 +26,11 @@ t.patchFile('js/preload/extensionSupport.js', text => {
   text = switchOff(text, 'Object.keys(constants).filter(name => chrome.tabs[name] === undefined).forEach(', '[].forEach(')
   return text
 })
+// the generated file, for this run only (npm run build first, as for every suite)
+t.patchFile('main.build.js', text => switchOff(text.replace(/\r\n/g, '\n'), '  startExtensionTabSync()\n', '\n'))
 const LIFECYCLE = t.extension('lifecycle-probe')
+const TABS = t.extension('tabs')
+const page = name => PAGE + '?' + name
 const RULES = t.extension('network-noworker', 'rules-fresh')
 const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWith('chrome-extension://' + id + '/'), 10000)
 ;(async () => {
@@ -80,6 +88,46 @@ const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWi
     const s2 = await target(t => t.url.startsWith('min://app/pages/settings/'))
     await waitFor(async () => (await s2.evaluate('typeof extensionPages')) === 'object')
     await s2.evaluate(`extensionPages.request('remove', { id: '${id}' })`)
+    u.close()
+    await quit(main)
+
+    // the extension library alone with Min's tabs: three tabs opened in the background from wa-a, which Min puts right after
+    // it each time (wa-a, wa-d, wa-c, wa-b)
+    main = await launch(page('wa-a'))
+    u = await ui()
+    await sleep(2000)
+    await u.evaluate("ipc.emit('addTab', {}, { url: 'min://settings' }); 1")
+    const s3 = await target(t => t.url.startsWith('min://app/pages/settings/'))
+    await waitFor(async () => (await s3.evaluate('typeof extensionPages')) === 'object')
+    await main.evaluate(`global.__nextOpen = ${JSON.stringify(TABS)}; 1`)
+    const tabsId = await s3.evaluate("extensionPages.request('load-unpacked')")
+    s3.close()
+    await u.evaluate("ipc.emit('extensions-close-tab', {}, tabs.get().find(t => t.url.startsWith('min://app/pages/settings/')).id); 1")
+    const idOf = name => u.evaluate(`tabs.get().find(t => t.url === ${JSON.stringify(page(name))}).id`)
+    const select = async name => { await u.evaluate(`ipc.emit('extensions-select-tab', {}, ${JSON.stringify(await idOf(name))}); 1`); await sleep(1500) }
+    await select('wa-a')
+    const tw = await workerOf(tabsId)
+    for (const name of ['wa-b', 'wa-c', 'wa-d']) {
+      await u.evaluate(`ipc.emit('extensions-open-tab', {}, { requestId: 'open-${name}', url: ${JSON.stringify(page(name))}, active: false }); 1`)
+      await sleep(2000)
+    }
+    const ours = urls => urls.filter(url => url && url.includes('?wa-'))
+    const minOrder = ours(await u.evaluate('tabs.get().map(t => t.url)'))
+    const libraryOrder = tw && ours((await tw.evaluate('listTabs()')).map(x => x.url))
+    check('still needed: the library lists tabs in the order their pages were created, not the window\'s (Min\'s tab list off)', minOrder.length === 4 && Array.isArray(libraryOrder) && libraryOrder.length === 4 && JSON.stringify(libraryOrder) !== JSON.stringify(minOrder), { min: minOrder, library: libraryOrder })
+    await select('wa-c')
+    const active = tw && await tw.evaluate('listTabs({ active: true, currentWindow: true })')
+    const place = (await u.evaluate('tabs.get().map(t => t.url)')).indexOf(page('wa-c'))
+    check('still needed: the library numbers the tabs a query matched (the active tab gets index 0, not its place)', Array.isArray(active) && active.length === 1 && active[0].index === 0 && place > 0, { active, place })
+    await select('wa-a')
+    const bBefore = tw && (await tw.evaluate('listTabs()')).find(x => x.url === page('wa-b'))
+    if (tw) await tw.evaluate('self.events = []; 1')
+    await u.evaluate(`ipc.emit('hibernateTab', {}, ${JSON.stringify(await idOf('wa-b'))}); 1`)
+    await sleep(1500)
+    const afterHibernating = tw && await tw.evaluate('listTabs()')
+    const events = tw && await tw.evaluate('self.events')
+    check('still needed: the library drops a tab without a page and reports it closed (a hibernated tab)', !!bBefore && Array.isArray(afterHibernating) && !afterHibernating.some(x => x.url === page('wa-b')) && events.some(e => e.type === 'removed' && e.id === bBefore.id), { before: bBefore, after: afterHibernating, events })
+    if (tw) tw.close()
     u.close()
     await quit(main)
     finish()
