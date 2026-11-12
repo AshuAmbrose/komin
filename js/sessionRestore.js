@@ -10,9 +10,10 @@ const statistics = require('js/statistics.js')
 const sessionRestore = {
   savePath: window.globalArgs['user-data-path'] + (platformType === 'windows' ? '\\sessionRestore.json' : '/sessionRestore.json'),
   previousState: null,
-  save: function (forceSave, sync) {
+  save: function (forceSave, sync, evenInBackground) {
     //only one window (the focused one) should be responsible for saving session restore data
-    if (!document.body.classList.contains('focused')) {
+    // (evenInBackground: main picked this window to save as Min closes with no window focused)
+    if (!document.body.classList.contains('focused') && evenInBackground !== true) {
       return
     }
 
@@ -235,21 +236,31 @@ const sessionRestore = {
   initialize: function () {
     setInterval(sessionRestore.save, 30000)
 
-    function saveBeforeClosing () {
-      sessionRestore.save(true, true)
+    function saveBeforeClosing (evenInBackground) {
+      sessionRestore.save(true, true, evenInBackground)
       //workaround for notifying the other windows that the task open in this window isn't open anymore.
       //This should ideally be done in windowSync, but it needs to run synchronously, which windowSync doesn't
       ipc.send('tab-state-change', [
         ['task-updated', tasks.getSelected().id, 'selectedInWindow', null]
       ])
     }
-    window.onbeforeunload = saveBeforeClosing
-    // main asks before closing this window or quitting: this page isn't unloaded then (main/windowManagement.js)
-    ipc.on('save-session-before-close', function () {
+    window.onbeforeunload = function () {
+      saveBeforeClosing()
+    }
+    // main asks before closing this window or quitting: this page isn't unloaded then (main/windowManagement.js).
+    // data: {evenInBackground: this window saves although it isn't focused, noAnswer: Windows is shutting down}
+    ipc.on('save-session-before-close', function (e, data) {
       try {
-        saveBeforeClosing()
+        if (data && data.noAnswer) {
+          // the window stays open (the shutdown can still be cancelled), so its task stays marked as open here
+          sessionRestore.save(true, true, data.evenInBackground === true)
+        } else {
+          saveBeforeClosing(!!data && data.evenInBackground === true)
+        }
       } finally {
-        ipc.send('session-saved-before-close')
+        if (!data || !data.noAnswer) {
+          ipc.send('session-saved-before-close')
+        }
       }
     })
 

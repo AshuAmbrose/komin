@@ -481,7 +481,7 @@ function extensionFiltersSender (sender) {
 }
 
 // Inserts the page's hiding CSS and runs its scriptlets. With scriptsToCaller, returns the scriptlets instead of running
-// them, for the page's preload to run before the page's own scripts (cosmetic-filters-start). Returns
+// them, for the page's preload to run before the page's own scripts (getCosmeticsForPageStart, below). Returns
 // {active, scriptlets}: active false when no hiding applies to the page (an extension's job, or an exception rule).
 function injectCosmeticFiltersForSender (engine, sender, url, scriptsToCaller) {
   if (!engine || !sender || sender.isDestroyed() || extensionFiltersSender(sender)) {
@@ -535,40 +535,38 @@ function cosmeticFiltersApply (event, url) {
   return !!event.sender && !event.sender.isDestroyed()
 }
 
-// generic hiding rules from the page's classes, ids and links (below); MIN_GENERIC_COSMETICS=0 turns them off, for
-// measuring what they cost (test/e2e/measure-generic-cosmetics.js)
-const genericCosmeticsOn = process.env.MIN_GENERIC_COSMETICS !== '0'
+// whether a message came from its tab's top frame (the hiding CSS and the scriptlets are for the tab's main frame)
+function cosmeticSenderIsTopFrame (event) {
+  const mainFrame = event.sender && !event.sender.isDestroyed() && event.sender.mainFrame
+  return !!mainFrame && event.processId === mainFrame.processId && event.frameId === mainFrame.routingId
+}
 
-// from the page's preload as the page starts (sync: the page waits for it, about 1 ms on YouTube). Answers
+// For a page's preload as the page starts: the ad blocker's part of the answer to the frame's one request, page-start
+// (main/userscripts.js; sync: the page waits for it, about 1 ms on YouTube). Inserts the hiding CSS and returns
 // {scriptlets, dom, whileLoading}: the scriptlets to run now, whether to report the page's classes, ids and links (dom),
 // and whether to start that while the page is still arriving (the setting hideAdSpacesWhileLoading, off unless true:
-// it costs about 3–5 MB a tab) rather than once it's parsed. Always answers, once: setting event.returnValue sends the
-// answer at once, so it's set only at the end.
-ipc.on('cosmetic-filters-start', function (event, url) {
-  let answer = null
-  try {
-    if (!cosmeticFiltersApply(event, url)) {
-      return
-    }
-    const whileLoading = settings.get('hideAdSpacesWhileLoading') === true
-    if (adblockerEngine) {
-      const result = injectCosmeticFiltersForSender(adblockerEngine, event.sender, url, true)
-      answer = { scriptlets: result.scriptlets, dom: result.active && genericCosmeticsOn, whileLoading }
-    } else if (adblockerEnginePromise) {
-      // the engine is still loading (just after startup): it all comes once it's ready, a round trip later
-      adblockerEnginePromise.then(function (engine) {
-        if (engine && event.sender && !event.sender.isDestroyed()) {
-          injectCosmeticFiltersForSender(engine, event.sender, url)
-        }
-      })
-      answer = { scriptlets: null, dom: genericCosmeticsOn && !extensionFiltersSender(event.sender), whileLoading }
-    }
-  } catch (e) {
-    console.warn('cosmetic filters failed for ' + url, e)
-  } finally {
-    event.returnValue = answer
+// it costs about 3–5 MB a tab) rather than once it's parsed. null when no hiding applies: not a tab's top frame, not
+// http(s), blocking off, or off for this site.
+function getCosmeticsForPageStart (event, url) {
+  if (!cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url)) {
+    return null
   }
-})
+  const whileLoading = settings.get('hideAdSpacesWhileLoading') === true
+  if (adblockerEngine) {
+    const result = injectCosmeticFiltersForSender(adblockerEngine, event.sender, url, true)
+    return { scriptlets: result.scriptlets, dom: result.active, whileLoading }
+  }
+  if (adblockerEnginePromise) {
+    // the engine is still loading (just after startup): it all comes once it's ready, a round trip later
+    adblockerEnginePromise.then(function (engine) {
+      if (engine && event.sender && !event.sender.isDestroyed()) {
+        injectCosmeticFiltersForSender(engine, event.sender, url)
+      }
+    })
+    return { scriptlets: null, dom: !extensionFiltersSender(event.sender), whileLoading }
+  }
+  return null
+}
 
 // Generic hiding rules. The engine keeps most generic rules (EasyList's ##.ad-slot and the like) in lookups by class, id
 // and link, and only returns them for the ones a page has. The page's preload reports those (all of them once the
@@ -580,12 +578,8 @@ function cosmeticDomList (value) {
 }
 
 ipc.on('cosmetic-filters-dom', function (event, url, found) {
-  if (!genericCosmeticsOn || !adblockerEngine || !found || !cosmeticFiltersApply(event, url) || extensionFiltersSender(event.sender)) {
-    return
-  }
-  // the top frame's preload reports (the CSS goes into the tab's main frame)
-  const mainFrame = event.sender.mainFrame
-  if (!mainFrame || event.processId !== mainFrame.processId || event.frameId !== mainFrame.routingId) {
+  // the top frame's preload reports
+  if (!adblockerEngine || !found || !cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url) || extensionFiltersSender(event.sender)) {
     return
   }
   try {

@@ -88,13 +88,14 @@ const server = http.createServer((req, res) => {
 
 const WRAP_MAIN = `(() => {
   const { ipcMain } = process.mainModule.require('electron')
-  const original = ipcMain.listeners('userscripts-get')[0]
-  ipcMain.removeAllListeners('userscripts-get')
+  const original = ipcMain.listeners('page-start')[0]
+  ipcMain.removeAllListeners('page-start')
   global.__usLog = []
-  ipcMain.on('userscripts-get', (e, url) => {
+  ipcMain.on('page-start', (e, url) => {
     const t = process.hrtime.bigint()
     original(e, url)
-    global.__usLog.push({ url, frameUrl: e.senderFrame && e.senderFrame.url, top: !e.senderFrame.parent, private: !e.sender.session.isPersistent(), ms: Number(process.hrtime.bigint() - t) / 1e6, scripts: e.returnValue ? e.returnValue.map(s => s.name) : null })
+    const us = e.returnValue && e.returnValue.userscripts
+    global.__usLog.push({ frameUrl: e.senderFrame && e.senderFrame.url, top: !e.senderFrame.parent, private: !e.sender.session.isPersistent(), ms: Number(process.hrtime.bigint() - t) / 1e6, scripts: us ? us.map(s => s.name) : null })
   })
   return 'wrapped'
 })()`

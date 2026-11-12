@@ -335,6 +335,40 @@ function getExtensionPermissionIncrease (oldManifest, newManifest) {
   return increase.allSites || increase.sites.length || increase.items.length || increase.other.length ? increase : null
 }
 
+// Whether a host pattern an extension declared covers one it asks for: the same pattern, or a narrower one
+// (chrome.permissions.request may only ask for what the manifest lists). "<all_urls>" covers everything, "*://*/*" every
+// http and https site, "https://*.example.com/*" example.com and its subdomains on https.
+function extensionHostPatternCovers (declared, requested) {
+  if (typeof declared !== 'string' || typeof requested !== 'string') {
+    return false
+  }
+  if (declared === requested || declared === '<all_urls>') {
+    return true
+  }
+  const parse = pattern => /^(\*|[a-z][a-z0-9+.-]*):\/\/([^/]*)(\/.*)$/i.exec(pattern)
+  const wide = parse(declared)
+  const narrow = parse(requested)
+  if (!wide || !narrow) {
+    return false
+  }
+  const [wideScheme, wideHost, widePath] = [wide[1].toLowerCase(), wide[2].toLowerCase(), wide[3]]
+  const [scheme, host, path] = [narrow[1].toLowerCase(), narrow[2].toLowerCase(), narrow[3]]
+  if (wideScheme !== scheme && !(wideScheme === '*' && (scheme === 'http' || scheme === 'https'))) {
+    return false
+  }
+  if (wideHost !== '*' && wideHost !== host) {
+    if (!wideHost.startsWith('*.') || host === '*') {
+      return false
+    }
+    const domain = wideHost.slice(2)
+    const asked = host.startsWith('*.') ? host.slice(2) : host
+    if (asked !== domain && !asked.endsWith('.' + domain)) {
+      return false
+    }
+  }
+  return widePath === '/*' || widePath === path
+}
+
 /*
 A manifest command's suggested_key ("Alt+Shift+D", or {default, windows, mac, linux}) as a key combo for Min's
 js/keybindings.js ("alt+shift+d"), or null if it isn't one Chrome would accept. Chrome's rules: Ctrl, Alt or (on a Mac)
@@ -383,6 +417,7 @@ if (typeof module !== 'undefined') {
     getExtensionManifestText,
     describeExtensionPermissions,
     getExtensionPermissionIncrease,
+    extensionHostPatternCovers,
     getExtensionShortcutCombo,
     extensionUsesNetworkFiltering
   }

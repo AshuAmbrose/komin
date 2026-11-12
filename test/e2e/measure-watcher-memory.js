@@ -11,7 +11,7 @@
 // Modes:
 //   on    the setting hideAdSpacesWhileLoading on: a shown page is watched from its first bytes on;
 //   late  Min's default: the watcher starts once the page is parsed (DOMContentLoaded), as on master;
-//   off   no generic rules (MIN_GENERIC_COSMETICS=0, read by main at start), as before 2026-11-10.
+//   off   no generic rules (old-behaviour.js's noGenericCosmetics), as before 2026-11-10.
 // usage: node test/e2e/measure-watcher-memory.js <on|late|off> [label]      results: results/measure-watcher-memory-<mode>[-label].json
 // Alternate the modes (on, late, off, on, late, off), at least three runs each. MIN_TEST_OLD switches other changes of
 // this branch back for the run (old-behaviour.js), for example MIN_TEST_OLD=scriptletsAfterStart.
@@ -21,11 +21,10 @@ if (!['on', 'late', 'off'].includes(mode)) {
   console.error('usage: node test/e2e/measure-watcher-memory.js <on|late|off> [label]')
   process.exit(2)
 }
-if (mode === 'off') process.env.MIN_GENERIC_COSMETICS = '0'
 const label = process.argv[3] ? '-' + process.argv[3].replace(/[^a-z0-9-]/gi, '') : ''
 const t = require('./harness')({ name: 'measure-watcher-memory-' + mode + label, minutes: 8, settings: { hideAdSpacesWhileLoading: mode === 'on' } })
 const { PAGE, sleep, check, finish, connect, list, waitFor, launch, quit, ui } = t
-const old = require('./old-behaviour')(t)
+const old = require('./old-behaviour')(t, (process.env.MIN_TEST_OLD || '').split(',').concat(mode === 'off' ? ['noGenericCosmetics'] : []))
 
 // the pages: the same every run (a fixed pseudo-random sequence per site and part)
 const PORT = 8784

@@ -5,7 +5,9 @@
    - a tab without a page is listed as a discarded tab: a stand-in object in the library's tab store;
    - a tab whose page Min closes isn't reported closed until the next list shows it gone (hibernation keeps the tab: its
      stand-in takes the page's id). When it loads again, its new page has a new id: extensions get tabs.onReplaced, as
-     Chrome sends when a discarded tab comes back with a new id.
+     Chrome sends when a discarded tab comes back with a new id;
+   - an extension can act on a discarded tab as in Chrome: reloading it or giving it a new address loads it again in the
+     background, activating it shows it, muting it is remembered for when it loads.
    This reaches into the library's internals (the names in missingExtensionTabInternals). If a newer version lacks one,
    none of it runs: extensions then see what the library alone shows, and Min says so in its log. */
 
@@ -41,6 +43,42 @@ class ExtensionStandInTab extends (require('events').EventEmitter) {
   isLoading () { return false }
   isCurrentlyAudible () { return false }
   getType () { return 'window' }
+
+  // What the library does to a tab's page when an extension asks (tabs.reload, tabs.update, tabs.insertCSS, tabs.goBack,
+  // webNavigation.getFrame). A discarded tab has no page: its window's UI loads it again (js/extensions.js), which
+  // extensions then see as tabs.onReplaced.
+  tellWindow (channel, data) {
+    const win = chromeExtensions.ctx.store.tabToWindow.get(this)
+    if (win && !win.isDestroyed()) {
+      sendIPCToWindow(win, channel, Object.assign({ tabId: this.minTabId }, data))
+    }
+  }
+
+  reload () { this.tellWindow('extensions-load-tab', {}) }
+  reloadIgnoringCache () { this.reload() }
+
+  loadURL (url) {
+    this.url = url
+    this.tellWindow('extensions-load-tab', { url })
+    return Promise.resolve()
+  }
+
+  setAudioMuted (muted) {
+    this.audioMuted = !!muted
+    this.tellWindow('extensions-mute-tab', { muted: !!muted })
+  }
+
+  insertCSS () { return Promise.resolve('') }
+
+  get navigationHistory () {
+    const noPage = function () {
+      throw new Error('This tab is discarded, so it has no page to go back or forward in. Reload or activate it first.')
+    }
+    return { goBack: noPage, goForward: noPage }
+  }
+
+  // no frames
+  get mainFrame () { return { framesInSubtree: [] } }
 }
 
 // the parts of electron-chrome-extensions (4.10) this file uses, by name: those missing or of another kind

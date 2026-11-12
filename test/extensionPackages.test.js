@@ -17,6 +17,7 @@ const {
   getExtensionManifestText,
   describeExtensionPermissions,
   getExtensionPermissionIncrease,
+  extensionHostPatternCovers,
   getExtensionShortcutCombo,
   extensionUsesNetworkFiltering
 } = require('../js/util/extensionPackages.js')
@@ -214,6 +215,33 @@ test('permissions: all sites, listed sites, labeled and other permissions', func
   assert.strictEqual(some.allSites, false)
   assert.deepStrictEqual(some.sites, ['*.example.com', 'https://github.com'])
   assert.deepStrictEqual(some.items, [])
+})
+
+test('optional permissions: a declared host pattern covers the same or a narrower one', function () {
+  const covers = extensionHostPatternCovers
+  assert.strictEqual(covers('https://example.com/*', 'https://example.com/*'), true)
+  assert.strictEqual(covers('<all_urls>', 'https://example.com/*'), true)
+  assert.strictEqual(covers('<all_urls>', 'file:///*'), true)
+  assert.strictEqual(covers('*://*/*', 'https://example.com/*'), true)
+  assert.strictEqual(covers('*://*/*', 'http://*.example.com/*'), true)
+  assert.strictEqual(covers('https://*/*', 'https://example.com/*'), true)
+  assert.strictEqual(covers('https://*.example.com/*', 'https://example.com/*'), true)
+  assert.strictEqual(covers('https://*.example.com/*', 'https://mail.example.com/*'), true)
+  assert.strictEqual(covers('https://*.example.com/*', 'https://*.mail.example.com/*'), true)
+  assert.strictEqual(covers('https://example.com/*', 'https://example.com/inbox'), true)
+  // not covered: another site, a wider pattern, another scheme, a look-alike host
+  assert.strictEqual(covers('https://example.com/*', 'https://other.com/*'), false)
+  assert.strictEqual(covers('https://example.com/*', 'https://*.example.com/*'), false)
+  assert.strictEqual(covers('https://example.com/*', '<all_urls>'), false)
+  assert.strictEqual(covers('https://example.com/*', '*://*/*'), false)
+  assert.strictEqual(covers('https://*/*', 'http://example.com/*'), false)
+  assert.strictEqual(covers('*://*/*', 'file:///*'), false)
+  assert.strictEqual(covers('*://*/*', '<all_urls>'), false)
+  assert.strictEqual(covers('https://*.example.com/*', 'https://notexample.com/*'), false)
+  assert.strictEqual(covers('https://*.example.com/*', 'https://*/*'), false)
+  assert.strictEqual(covers('https://example.com/inbox', 'https://example.com/*'), false)
+  assert.strictEqual(covers('https://example.com/*', 'not a pattern'), false)
+  assert.strictEqual(covers(undefined, 'https://example.com/*'), false)
 })
 
 test('shortcuts: suggested keys as Min key combos', function () {

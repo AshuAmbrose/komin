@@ -68,12 +68,12 @@ async function watch (c) {
     await sleep(2000)
     await main.evaluate(`(() => { const win = ${WIN}; win.setAlwaysOnTop(true); win.focus(); return 1 })()`)
     check('screen unlocked (info)', true, { screenLocked: t.isScreenLocked() })
-    // how long the page waits for its scriptlets as it starts (main/filtering.js, cosmetic-filters-start); whether they came
+    // how long the page waits for main's answer as it starts (page-start: the scriptlets and its userscripts); whether they came
     // in time shows as firstPlayerData.trapped
     await main.evaluate(`(() => { const ipc = process.mainModule.require('electron').ipcMain; global.__scriptletsHanded = []
-      for (const fn of ipc.listeners('cosmetic-filters-start')) { ipc.removeListener('cosmetic-filters-start', fn)
-        ipc.on('cosmetic-filters-start', function (event, url) { const start = Date.now(); fn(event, url); __scriptletsHanded.push({ url: String(url).slice(0, 60), mainMs: Date.now() - start }) }) }
-      return ipc.listeners('cosmetic-filters-start').length })()`)
+      for (const fn of ipc.listeners('page-start')) { ipc.removeListener('page-start', fn)
+        ipc.on('page-start', function (event, url) { const start = Date.now(); fn(event, url); __scriptletsHanded.push({ url: String(url).slice(0, 60), mainMs: Date.now() - start }) }) }
+      return ipc.listeners('page-start').length })()`)
     const cpuStart = await main.evaluate(CPU)
     const wallStart = Date.now()
     const memoryWhilePlaying = []

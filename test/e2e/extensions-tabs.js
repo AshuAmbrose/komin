@@ -2,7 +2,9 @@
 //   - every tab of the window, in Min's order (tabs.query's index), whatever order they were opened in;
 //   - a tab's index is its place in the window, also when the query matches only that tab;
 //   - a tab without a loaded page (hibernated, or restored and not shown yet) is still listed, as Chrome lists a
-//     discarded tab, and hibernating or waking it isn't reported as the tab closing.
+//     discarded tab, and hibernating or waking it isn't reported as the tab closing;
+//   - an extension can act on such a tab as in Chrome (tab suspenders and session managers do): muting it is kept,
+//     reloading it loads it again in the background, activating it shows it, and going back in it is refused, not a crash.
 //   - main/extensionTabs.js found the library internals it uses (it would turn itself off and say so in Min's log).
 // electron-workarounds checks that the library alone still needs all this.
 // Test extension: extensions/tabs (records every tab event).
@@ -70,6 +72,33 @@ const select = async (u, name) => { await u.evaluate(`ipc.emit('extensions-selec
     const wEvents = await w.evaluate('self.events')
     const sameTab = !!b && !!woken && (woken.id === b.id || wEvents.some(e => e.type === 'replaced' && e.removed === b.id && e.added === woken.id))
     check('woken: the same tab id, or onReplaced from the old one', sameTab && woken.discarded === false && !wEvents.some(e => e.type === 'removed' && e.id === b.id), { before: b, woken, events: wEvents })
+    await select(u, 'a')
+
+    // an extension acting on a hibernated tab
+    const hibernate = async name => { await u.evaluate(`ipc.emit('hibernateTab', {}, ${JSON.stringify(await idOf(u, name))}); 1`); await sleep(1500) }
+    const listed = async name => (await w.evaluate('listTabs()')).find(x => x.url === page(name))
+    const shown = () => u.evaluate('tabs.get(tabs.getSelected()).url')
+    await hibernate('c')
+    const c = await listed('c')
+    await w.evaluate('self.events = []; 1')
+    const muted = await w.evaluate(`chrome.tabs.update(${c && c.id}, { muted: true }).then(tab => tab && tab.mutedInfo && tab.mutedInfo.muted)`)
+    await sleep(700)
+    const mutedInMin = await u.evaluate(`tabs.get(${JSON.stringify(await idOf(u, 'c'))}).muted`)
+    check('hibernated: muted by the extension, which Min keeps with the tab', !!c && c.discarded === true && muted === true && mutedInMin === true, { tab: c, extension: muted, min: mutedInMin })
+    // the library answers a refused call with nothing and logs the error in the extension's console
+    const back = await w.evaluate(`chrome.tabs.goBack(${c && c.id}).then(result => result === undefined ? 'refused' : result, e => 'refused: ' + e.message)`)
+    check('hibernated: going back is refused, and Min keeps running', String(back).startsWith('refused') && (await listed('c')) !== undefined, back)
+    await w.evaluate(`chrome.tabs.reload(${c && c.id}).then(() => 1)`)
+    await sleep(2500)
+    const cLoaded = await listed('c')
+    const reloadEvents = await w.evaluate('self.events')
+    check('hibernated: reloaded by the extension, it loads again in the background, as the same tab', !!c && !!cLoaded && cLoaded.discarded === false && reloadEvents.some(e => e.type === 'replaced' && e.removed === c.id && e.added === cLoaded.id) && !reloadEvents.some(e => e.type === 'removed') && (await shown()) === page('a'), { before: c, after: cLoaded, events: reloadEvents, shown: await shown() })
+    await hibernate('d')
+    const d = await listed('d')
+    await w.evaluate(`chrome.tabs.update(${d && d.id}, { active: true }).then(() => 1)`)
+    await sleep(2500)
+    const dShown = await listed('d')
+    check('hibernated: activated by the extension, it is shown', !!d && d.discarded === true && !!dShown && dShown.discarded === false && dShown.active === true && (await shown()) === page('d'), { before: d, after: dShown, shown: await shown() })
     await select(u, 'a')
     u.close()
     w.close()

@@ -4,16 +4,22 @@
 var electron = require('electron')
 var ipc = electron.ipcRenderer
 
+// This frame's one request to main as it starts (main/userscripts.js, page-start), sent synchronously so that what it
+// brings runs before the page's own scripts: {cosmetics: the ad blocker's part (only for a tab's top frame), userscripts:
+// this frame's userscripts, which js/preload/userscripts.js runs}
+var minPageStart = null
+if (window.location.protocol === 'http:' || window.location.protocol === 'https:' || window.location.protocol === 'file:') {
+  minPageStart = ipc.sendSync('page-start', window.location.href)
+}
+
 // Ad blocking (main/filtering.js): the scriptlets run now, before the page's own scripts, as in uBlock Origin. Several only
 // work if they're there first (YouTube's ad data in ytInitialPlayerResponse). Main inserts the hiding CSS itself.
-if (window === window.top && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
-  var minCosmetics = ipc.sendSync('cosmetic-filters-start', window.location.href)
-  if (minCosmetics && minCosmetics.scriptlets) {
-    electron.webFrame.executeJavaScript(minCosmetics.scriptlets)
-  }
-  if (minCosmetics && minCosmetics.dom) {
-    reportCosmeticFeatures(minCosmetics.whileLoading === true)
-  }
+var minCosmetics = minPageStart && minPageStart.cosmetics
+if (minCosmetics && minCosmetics.scriptlets) {
+  electron.webFrame.executeJavaScript(minCosmetics.scriptlets)
+}
+if (minCosmetics && minCosmetics.dom) {
+  reportCosmeticFeatures(minCosmetics.whileLoading === true)
 }
 
 /* Generic hiding rules (main/filtering.js, cosmetic-filters-dom): the engine keeps rules such as ##.ad-slot in lookups by

@@ -41,13 +41,21 @@ const windows = {
           }
           // a UI that doesn't answer can't keep the window open
           entry.sessionSaveTimeout = setTimeout(entry.afterSessionSaved, 2000)
-          ui.send('save-session-before-close')
+          ui.send('save-session-before-close', { evenInBackground: windows.savesSessionAtClose(window) })
         }
         return
       }
       // detach WebContentsViews to ensure they aren't destroyed when the window is closed
       window.getContentView().children.slice(1).forEach(child => window.getContentView().removeChildView(child))
       windows.openWindows.find(w => w.win === window).closed = true
+    })
+
+    // Windows is shutting down, restarting or signing out: no close event comes, and Min is ended soon after
+    window.on('query-session-end', function () {
+      const ui = getWindowWebContents(window)
+      if (ui && !ui.isDestroyed()) {
+        ui.send('save-session-before-close', { evenInBackground: windows.getCurrent() === window, noAnswer: true })
+      }
     })
 
     window.on('closed', function() {
@@ -62,6 +70,13 @@ const windows = {
     windows.nextId++
   },
   quitting: false,
+  // A window's UI only saves the session while it's focused (one window saves, not all). At a close nobody may be:
+  // Min is usually in the background, closed from the taskbar or as Windows shuts down. Then one window saves anyway:
+  // the last one used when quitting, or the last one open.
+  savesSessionAtClose: function (window) {
+    const open = windows.openWindows.filter(w => !w.closed)
+    return windows.quitting ? windows.getCurrent() === window : open.length === 1 && open[0].win === window
+  },
   removeWindow: function (window) {
     windows.openWindows.splice(windows.openWindows.findIndex(w => w.win === window), 1)
 

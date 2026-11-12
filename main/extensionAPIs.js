@@ -73,6 +73,12 @@ function registerExtensionAPIs () {
     if (!contents) {
       throw new Error('Cannot access contents of the page.')
     }
+    // "activeTab" only counts once the user has used the extension on this tab, and until the tab goes to another site
+    // (extensionPermissions.js). Until 2026-11-12 having it in the manifest was enough: a picture of whatever was
+    // shown, at any time.
+    if (extensionPermissionChecksOn && !extensionHasAllSites(extension) && !extensionCanAccessTabSite(extension, chromeExtensions.api.tabs.getTabDetails(contents))) {
+      throw new Error('The \'activeTab\' permission is not in effect because this extension has not been invoked on this tab.')
+    }
     const url = contents.getURL()
     if (!/^(https?|file|data):/i.test(url) && !url.startsWith('chrome-extension://' + extension.id + '/')) {
       throw new Error('Cannot access contents of url "' + url + '".')

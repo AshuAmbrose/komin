@@ -10,12 +10,13 @@ const SETTINGS = 'min://app/pages/settings/index.html'
 const SETTINGS_FILE = path.join(t.profileDir, 'settings.json')
 const savedSetting = key => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))[key] } catch (e) { return 'unreadable' } }
 const flags = main => main.evaluate("process.mainModule.require('electron').app.commandLine.getSwitchValue('js-flags')")
-// what main tells a page as it starts (main/filtering.js, cosmetic-filters-start), asked as the page's preload asks
+// what main tells a page's ad blocking as the page starts (page-start's cosmetics: main/userscripts.js and
+// main/filtering.js), asked as the top frame's preload asks
 const startAnswer = main => main.evaluate(`new Promise(resolve => {
   const e = process.mainModule.require('electron')
   const wc = e.webContents.getAllWebContents().find(w => w.getURL().startsWith('http'))
-  const event = { sender: wc, set returnValue (v) { resolve(v) } }
-  e.ipcMain.emit('cosmetic-filters-start', event, 'https://news.example.org/')
+  const event = { sender: wc, senderFrame: wc.mainFrame, processId: wc.mainFrame.processId, frameId: wc.mainFrame.routingId, set returnValue (v) { resolve(v && v.cosmetics) } }
+  e.ipcMain.emit('page-start', event, 'https://news.example.org/')
 })`)
 async function openSettings (u) {
   await u.evaluate(`ipc.emit('addTab', {}, { url: ${JSON.stringify(SETTINGS)} }); 1`)

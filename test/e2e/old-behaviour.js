@@ -3,8 +3,11 @@
 // back when the run ends. Set MIN_TEST_OLD to a comma-separated list of these names; a measurement script calls
 // require('./old-behaviour')(t), which returns the names it switched (record them in the result).
 //   scriptletsAfterStart   the start scriptlets come a round trip later, run by main (master's inject-cosmetic-filters),
-//                          not from the preload before the page's own scripts (cosmetic-filters-start); the generic rules
-//                          still run, their watcher from DOMContentLoaded whatever hideAdSpacesWhileLoading says
+//                          not from the preload before the page's own scripts (the cosmetics in page-start's answer);
+//                          the generic rules still run, their watcher from DOMContentLoaded whatever
+//                          hideAdSpacesWhileLoading says
+//   noGenericCosmetics     no generic hiding rules: pages aren't asked for their classes, ids and links (as before
+//                          2026-11-10; this was the environment variable MIN_GENERIC_COSMETICS=0 until 2026-11-12)
 //   domainWithoutWWW       site rules get the hostname without "www." (master), not the registrable domain (pitfall 52)
 //   noExtensionTabList     Min's tab list for extensions off (main/extensionTabs.js, startExtensionTabSync)
 //   minimizedFocusedInUse  a minimized window that Windows left focused counts as in use (master)
@@ -25,11 +28,17 @@ function replaceAll (t, file, pairs, append) {
 const SWITCHES = {
   scriptletsAfterStart: function (t) {
     replaceAll(t, 'dist/preload.js', [
-      ["var minCosmetics = ipc.sendSync('cosmetic-filters-start', window.location.href)",
-        "ipc.send('cosmetic-filters-start-old', window.location.href)\n  var minCosmetics = { scriptlets: null, dom: true }"]
+      ['var minCosmetics = minPageStart && minPageStart.cosmetics',
+        "var minCosmetics = null\nif (window === window.top && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {\n  ipc.send('cosmetic-filters-start-old', window.location.href)\n  minCosmetics = { scriptlets: null, dom: true }\n}"]
     ])
-    replaceAll(t, 'main.build.js', [], "ipc.on('cosmetic-filters-start-old', function (event, url) { if (cosmeticFiltersApply(event, url) && adblockerEngine) { injectCosmeticFiltersForSender(adblockerEngine, event.sender, url) } })")
+    replaceAll(t, 'main.build.js', [
+      ['answer.cosmetics = getCosmeticsForPageStart(event, url)', 'answer.cosmetics = null']
+    ], "ipc.on('cosmetic-filters-start-old', function (event, url) { if (cosmeticFiltersApply(event, url) && adblockerEngine) { injectCosmeticFiltersForSender(adblockerEngine, event.sender, url) } })")
   },
+  noGenericCosmetics: t => replaceAll(t, 'main.build.js', [
+    ['return { scriptlets: result.scriptlets, dom: result.active, whileLoading }', 'return { scriptlets: result.scriptlets, dom: false, whileLoading }'],
+    ['return { scriptlets: null, dom: !extensionFiltersSender(event.sender), whileLoading }', 'return { scriptlets: null, dom: false, whileLoading }']
+  ]),
   domainWithoutWWW: t => replaceAll(t, 'main.build.js', [
     ['return getRegistrableDomain(hostname) || removeWWW(hostname)', 'return removeWWW(hostname)']
   ]),

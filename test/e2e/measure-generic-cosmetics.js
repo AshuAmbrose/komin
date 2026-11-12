@@ -3,7 +3,7 @@
 // One run, in a profile of its own, in one of three modes:
 //   on    the setting hideAdSpacesWhileLoading on: a shown page is watched from its first bytes on;
 //   late  Min's default: the watcher starts once the page is parsed (DOMContentLoaded), as Ghostery's and uBO Lite's do;
-//   off   no generic rules (MIN_GENERIC_COSMETICS=0, read by main at start).
+//   off   no generic rules (old-behaviour.js's noGenericCosmetics).
 // What it does:
 //   - seven sites, each opened in the shown tab, scrolled five times (pages load more as you scroll), then 10 s more;
 //   - then a minute with the last tab shown and the others in the background, then a minute minimized;
@@ -19,11 +19,10 @@ if (!['on', 'late', 'off'].includes(mode)) {
   console.error('usage: node test/e2e/measure-generic-cosmetics.js <on|late|off> [label]')
   process.exit(2)
 }
-if (mode === 'off') process.env.MIN_GENERIC_COSMETICS = '0'
 const label = process.argv[3] ? '-' + process.argv[3].replace(/[^a-z0-9-]/gi, '') : ''
 const t = require('./harness')({ name: 'measure-generic-cosmetics-' + mode + label, minutes: 15, settings: { hideAdSpacesWhileLoading: mode === 'on' } })
 const { PAGE, sleep, check, finish, connect, list, waitFor, launch, quit, ui } = t
-const old = require('./old-behaviour')(t)
+const old = require('./old-behaviour')(t, (process.env.MIN_TEST_OLD || '').split(',').concat(mode === 'off' ? ['noGenericCosmetics'] : []))
 
 // the watcher's time in each page (its scans and its mutation callbacks, nested calls counted once) and when it sent its
 // first report, read through a DOM event: the watcher runs in the preload's isolated world

@@ -21,6 +21,7 @@ const REGRESSION = [
   'extensions-apis',
   'extensions-tabs',
   'extensions-passwords',
+  'extensions-permissions',
   'extensions-startup',
   'extensions-footprint',
   'extensions-youtube',

@@ -126,6 +126,8 @@ function startChromeExtensions () {
   extensionSession.registerPreloadScript({ id: 'min-extension-support-frame', type: 'frame', filePath: supportPreload })
   extensionSession.registerPreloadScript({ id: 'min-extension-support-worker', type: 'service-worker', filePath: supportPreload })
   registerExtensionAPIs()
+  // every API handler is registered now: what extensions may see and do without permission (extensionPermissions.js)
+  startExtensionPermissionChecks()
 
   extensionSession.serviceWorkers.on('running-status-changed', function ({ versionId, runningStatus }) {
     if (runningStatus !== 'starting') {
@@ -1322,6 +1324,8 @@ ipc.handle('extensions-toolbar-click', function (event, args) {
   if (!contents || !args || !extensionSession.extensions.getExtension(args.id)) {
     return
   }
+  // the user used the extension on this tab: "activeTab" (extensionPermissions.js)
+  grantExtensionActiveTab(extensionSession.extensions.getExtension(args.id), chromeExtensions.api.tabs.getTabDetails(contents))
   // some extensions' buttons open their side panel (sidePanel.setPanelBehavior)
   if (toggleExtensionSidePanelFromAction(args.id, win)) {
     return

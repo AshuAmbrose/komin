@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: unprivileged",
+  "version": "1.0",
+  "description": "Test extension for extensions-permissions.js: no \"tabs\" permission, access to one test page only, activeTab, and cookies, webNavigation and access to localhost declared as optional (the suite grants cookies and localhost late). Records what Min lets it see.",
+  "background": { "service_worker": "sw.js" },
+  "action": { "default_title": "Min test: unprivileged" },
+  "permissions": ["activeTab"],
+  "optional_permissions": ["cookies", "webNavigation"],
+  "optional_host_permissions": ["http://localhost/*"],
+  "host_permissions": ["http://127.0.0.1/page?allowed*"]
+}

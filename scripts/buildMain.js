@@ -31,7 +31,8 @@ const modules = [
   'js/util/extensionPackages.js',
   'main/extensions.js',
   'main/extensionAPIs.js',
-  'main/extensionTabs.js'
+  'main/extensionTabs.js',
+  'main/extensionPermissions.js'
 ]
 
 function buildMain () {

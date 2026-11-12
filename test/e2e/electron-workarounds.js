@@ -6,7 +6,8 @@
 // when another extension loads (pitfall 47) and its chrome.tabs constants (pitfall 48): still missing without Min?
 // And with Min's tab list for extensions off (main/extensionTabs.js, switched off in main.build.js): does the library on its
 // own still list tabs in the order their pages were created, number the tabs a query matched, and drop a tab without a page
-// (pitfall 51)?
+// (pitfall 51)? And with Min's permission checks off (main/extensionPermissions.js, and the APIs js/preload/extensionSupport.js
+// takes away): does the library still give an extension that asked for nothing every tab's address and every site's cookies?
 // A PASS here means "the workaround is still needed". A FAIL means Electron or the library changed: check whether Min's
 // workaround can go.
 const t = require('./harness')({ name: 'electron-workarounds', minutes: 10 })
@@ -24,12 +25,14 @@ t.patchFile('js/preload/extensionSupport.js', text => {
   text = switchOff(text, '      globalThis.browser = chrome\n', '')
   text = switchOff(text, "  ipcRenderer.on('min-extension-restore-apis', () => runInExtensionWorld(restoreExtensionAPIs))\n", '')
   text = switchOff(text, 'Object.keys(constants).filter(name => chrome.tabs[name] === undefined).forEach(', '[].forEach(')
+  text = switchOff(text, '        if (!declared.has(name)) {\n', '        if (false) {\n')
   return text
 })
 // the generated file, for this run only (npm run build first, as for every suite)
-t.patchFile('main.build.js', text => switchOff(text.replace(/\r\n/g, '\n'), '  startExtensionTabSync()\n', '\n'))
+t.patchFile('main.build.js', text => switchOff(switchOff(text.replace(/\r\n/g, '\n'), '  startExtensionTabSync()\n', '\n'), '  startExtensionPermissionChecks()\n', '\n'))
 const LIFECYCLE = t.extension('lifecycle-probe')
 const TABS = t.extension('tabs')
+const UNPRIVILEGED = t.extension('unprivileged')
 const page = name => PAGE + '?' + name
 const RULES = t.extension('network-noworker', 'rules-fresh')
 const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWith('chrome-extension://' + id + '/'), 10000)
@@ -101,6 +104,8 @@ const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWi
     await waitFor(async () => (await s3.evaluate('typeof extensionPages')) === 'object')
     await main.evaluate(`global.__nextOpen = ${JSON.stringify(TABS)}; 1`)
     const tabsId = await s3.evaluate("extensionPages.request('load-unpacked')")
+    await main.evaluate(`global.__nextOpen = ${JSON.stringify(UNPRIVILEGED)}; 1`)
+    const unprivilegedId = await s3.evaluate("extensionPages.request('load-unpacked')")
     s3.close()
     await u.evaluate("ipc.emit('extensions-close-tab', {}, tabs.get().find(t => t.url.startsWith('min://app/pages/settings/')).id); 1")
     const idOf = name => u.evaluate(`tabs.get().find(t => t.url === ${JSON.stringify(page(name))}).id`)
@@ -127,6 +132,20 @@ const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWi
     const afterHibernating = tw && await tw.evaluate('listTabs()')
     const events = tw && await tw.evaluate('self.events')
     check('still needed: the library drops a tab without a page and reports it closed (a hibernated tab)', !!bBefore && Array.isArray(afterHibernating) && !afterHibernating.some(x => x.url === page('wa-b')) && events.some(e => e.type === 'removed' && e.id === bBefore.id), { before: bBefore, after: afterHibernating, events })
+    // an extension without the "tabs" or "cookies" permission (never granted), and with no access to these pages
+    const uw = await workerOf(unprivilegedId)
+    const pageTab = await target(x => x.type === 'page' && x.url === page('wa-a'), 10000)
+    if (pageTab) await pageTab.evaluate("document.cookie = 'secret=1; path=/'; 1")
+    await sleep(500)
+    const addresses = uw && (await uw.evaluate('listTabs()')).map(x => x.url).filter(Boolean)
+    check('still needed: the library gives every extension every tab\'s address (Min\'s permission checks off)', Array.isArray(addresses) && addresses.includes(page('wa-a')), addresses)
+    const cookies = uw && await uw.evaluate('readCookies()')
+    check('still needed: the library gives every extension every site\'s cookies (Min\'s permission checks off)', Array.isArray(cookies) && cookies.includes('secret=1'), cookies)
+    // its bridge to main takes the extension's id as an argument, and stays within reach of the extension's code
+    const asAnother = uw && await uw.evaluate(`readCookiesAs(${JSON.stringify(tabsId)})`)
+    check('still needed: an extension can call main in another extension\'s name (Min\'s sender check off)', Array.isArray(asAnother) && asAnother.includes('secret=1'), asAnother)
+    if (pageTab) pageTab.close()
+    if (uw) uw.close()
     if (tw) tw.close()
     u.close()
     await quit(main)
