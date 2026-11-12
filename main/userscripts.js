@@ -471,15 +471,22 @@ function getUserscriptsForFrame (event) {
   })
 }
 
-// sent synchronously by js/preload/userscripts.js at document start, so it must always reply
-ipc.on('userscripts-get', function (event) {
-  let result = null
+// A frame's one request to main as it starts (js/preload/default.js; http, https and file pages), sent synchronously:
+// the page waits for the answer, so this must always answer, and only once (setting event.returnValue sends it,
+// pitfall 49). {cosmetics: the ad blocker's part, for a tab's top frame (main/filtering.js), userscripts: this frame's}
+ipc.on('page-start', function (event, url) {
+  const answer = { cosmetics: null, userscripts: null }
   try {
-    result = getUserscriptsForFrame(event)
+    answer.cosmetics = getCosmeticsForPageStart(event, url)
+  } catch (e) {
+    console.warn('cosmetic filters failed for ' + url, e)
+  }
+  try {
+    answer.userscripts = getUserscriptsForFrame(event)
   } catch (e) {
     console.warn('failed to match userscripts', e)
   }
-  event.returnValue = result
+  event.returnValue = answer
 })
 
 ipc.handle('userscripts-list', function (event) {

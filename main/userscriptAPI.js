@@ -99,6 +99,19 @@ ipc.on('userscripts-xhr', function (event, args) {
       stop('error', { error: 'Redirect not allowed' })
       return
     }
+    // a redirect may only lead where the script could have asked to go itself: otherwise a server the script may reach
+    // could pass its request, cookies included, on to any site (security review A4)
+    let redirectError
+    try {
+      redirectError = getUserscriptConnectError(script, new URL(redirectURL), frame)
+    } catch (e) {
+      redirectError = 'Invalid redirect'
+    }
+    if (redirectError) {
+      console.warn('userscript request blocked at a redirect: ' + redirectError)
+      stop('error', { error: redirectError })
+      return
+    }
     state.finalUrl = redirectURL
     request.followRedirect()
   })

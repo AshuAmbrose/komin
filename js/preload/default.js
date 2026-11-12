@@ -1,10 +1,93 @@
 /* imports common modules */
+/* global ghosteryContent, MutationObserver */
 
 var electron = require('electron')
 var ipc = electron.ipcRenderer
 
-if (window === window.top && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
-  ipc.send('inject-cosmetic-filters', window.location.href)
+// This frame's one request to main as it starts (main/userscripts.js, page-start), sent synchronously so that what it
+// brings runs before the page's own scripts: {cosmetics: the ad blocker's part (only for a tab's top frame), userscripts:
+// this frame's userscripts, which js/preload/userscripts.js runs}
+var minPageStart = null
+if (window.location.protocol === 'http:' || window.location.protocol === 'https:' || window.location.protocol === 'file:') {
+  minPageStart = ipc.sendSync('page-start', window.location.href)
+}
+
+// Ad blocking (main/filtering.js): the scriptlets run now, before the page's own scripts, as in uBlock Origin. Several only
+// work if they're there first (YouTube's ad data in ytInitialPlayerResponse). Main inserts the hiding CSS itself.
+var minCosmetics = minPageStart && minPageStart.cosmetics
+if (minCosmetics && minCosmetics.scriptlets) {
+  electron.webFrame.executeJavaScript(minCosmetics.scriptlets)
+}
+if (minCosmetics && minCosmetics.dom) {
+  reportCosmeticFeatures(minCosmetics.whileLoading === true)
+}
+
+/* Generic hiding rules (main/filtering.js, cosmetic-filters-dom): the engine keeps rules such as ##.ad-slot in lookups by
+   class, id and link, so the page tells main which ones it has. Ghostery's own page watcher does that (DOMMonitor, from
+   @ghostery/adblocker-content, which scripts/buildPreload.js puts before this file): first what's there, then only what's
+   new as the page changes. A shown page is watched once it's parsed, as Ghostery and uBO Lite do; with the setting
+   hideAdSpacesWhileLoading (whileLoading), while it's still arriving, from its root element on, so the rules come with
+   the first parts drawn (on big pages an empty ad box shows until the page is parsed otherwise; it costs about 3–5 MB a
+   tab). Nothing while the page is hidden: the watching stops, and one scan catches up when it's shown again; a page
+   loaded hidden gets one scan once it's parsed. This runs in the preload's isolated world, so a page's patches to the
+   DOM's built-ins don't change what it sees. */
+function reportCosmeticFeatures (whileLoading) {
+  var monitor = new ghosteryContent.DOMMonitor(function (update) {
+    if (update.type === 'features') {
+      ipc.send('cosmetic-filters-dom', window.location.href, { classes: update.classes, ids: update.ids, hrefs: update.hrefs })
+    }
+  })
+  var watching = false
+
+  function canWatch () {
+    return !document.hidden && (whileLoading ? document.documentElement !== null : document.readyState !== 'loading')
+  }
+
+  function watch () {
+    if (watching || !canWatch()) {
+      return
+    }
+    watching = true
+    // what's there so far (the watcher remembers what it sent: only what's new goes), then every change
+    monitor.queryAll(window)
+    monitor.start(window)
+  }
+
+  // while it arrives: from the root element on (the preload runs before the document has one); otherwise from
+  // DOMContentLoaded (parsed, below)
+  if (whileLoading && document.documentElement) {
+    watch()
+  } else if (whileLoading) {
+    var waitForRoot = new MutationObserver(function () {
+      if (document.documentElement) {
+        waitForRoot.disconnect()
+        watch()
+      }
+    })
+    waitForRoot.observe(document, { childList: true })
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) {
+      watch()
+    } else if (watching) {
+      watching = false
+      monitor.stop()
+    }
+  })
+
+  function parsed () {
+    if (document.hidden) {
+      monitor.queryAll(window)
+    } else {
+      watch()
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', parsed, { once: true })
+  } else {
+    parsed()
+  }
 }
 
 /* Used by tab hibernation (main/viewManager.js) to protect unsaved input.
@@ -114,7 +197,8 @@ ipc.on('enterPictureInPicture', function (event, data) {
 })
 
 window.addEventListener('message', function (e) {
-  if (!e.origin.startsWith('min://')) {
+  // only an internal page asking for itself, not another window
+  if (!e.origin.startsWith('min://') || e.source !== window) {
     return
   }
 

@@ -13,7 +13,14 @@ const USERSCRIPT_UPDATE_INTERVAL = 24 * 60 * 60 * 1000
 const userscriptCrypto = require('crypto')
 
 const failedUserscriptDownloads = new Map() // URL: error message, so a broken @require isn't retried on every reload
-const pendingUserscriptInstalls = new Map() // URL: {content, expires}, the exact file the install page showed
+// the exact file each install page showed: install page (its webContents id) + ' ' + URL: {content, expires}. By page,
+// not by URL alone: a second install page for the same address (an attacker's page can open one) fetched it again and
+// replaced what the first page's Install button installed (security review B3)
+const pendingUserscriptInstalls = new Map()
+// local .user.js files Min itself opened an install page for (promptUserscriptInstall): the page's webContents: file URL.
+// The page's address names the file, and anything that can open a page could name any file otherwise (an extension
+// with no permissions did; a UNC path would also make Windows connect to another computer; security review B4)
+const userscriptLocalFileInstallPages = new WeakMap()
 let userscriptDependencyDownload = null
 let userscriptUpdateTimer = null
 let userscriptUpdateCheck = null
@@ -187,11 +194,24 @@ function describeUserscriptForPage (script) {
   }
 }
 
-async function getUserscriptInstallInfo (url, id) {
+function getPendingUserscriptInstallKey (event, url) {
+  return event.sender.id + ' ' + url
+}
+
+async function getUserscriptInstallInfo (url, id, event) {
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch (e) {
+    throw new Error('Not a script address: ' + url)
+  }
+  if (parsed.protocol === 'file:' && (userscriptLocalFileInstallPages.get(event.sender) !== url || (parsed.host !== '' && parsed.host !== 'localhost'))) {
+    throw new Error('Open the file in a tab to install it.')
+  }
   const file = await fetchUserscriptFile(url, true)
   const content = file.data.toString('utf-8')
   const script = compileUserscriptForInstall(content)
-  pendingUserscriptInstalls.set(url, { content, expires: Date.now() + 60 * 60 * 1000 })
+  pendingUserscriptInstalls.set(getPendingUserscriptInstallKey(event, url), { content, expires: Date.now() + 60 * 60 * 1000 })
 
   let existing = id && getKnownUserscripts().find(installed => installed.id === id)
   existing = existing || findInstalledUserscript(script)
@@ -393,6 +413,9 @@ function promptUserscriptInstall (contents, url, contentTypes) {
     return false
   }
   const installURL = userscriptInstallPage + '?url=' + encodeURIComponent(url)
+  if (url.startsWith('file:')) {
+    userscriptLocalFileInstallPages.set(contents, url)
+  }
   // not loadURL's promise: it rejects when the file's own load is cut short, which is what happens here
   const removeRawFileEntry = function () {
     if (contents.isDestroyed() || contents.getURL() !== installURL) {
@@ -436,13 +459,14 @@ function notifyUserscriptPages () {
 
 const userscriptPageActions = {
   list: () => getUserscriptManagementList(),
-  'install-info': args => getUserscriptInstallInfo(args.url, args.id),
+  'install-info': (args, event) => getUserscriptInstallInfo(args.url, args.id, event),
   install: function (args, event) {
-    const pending = pendingUserscriptInstalls.get(args.url)
+    const key = getPendingUserscriptInstallKey(event, args.url)
+    const pending = pendingUserscriptInstalls.get(key)
     if (!pending || pending.expires < Date.now()) {
       throw new Error('The script changed, reload this page to review it again.')
     }
-    pendingUserscriptInstalls.delete(args.url)
+    pendingUserscriptInstalls.delete(key)
     return installUserscript(pending.content, /^https?:/i.test(args.url) ? args.url : '', args.id)
   },
   'set-enabled': args => setUserscriptEnabled(args.id, args.enabled),

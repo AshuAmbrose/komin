@@ -52,11 +52,25 @@ function onPageURLChange (tab, url) {
   webviews.callAsync(tab, 'setVisualZoomLevelLimits', [1, 3])
 }
 
-// called whenever a navigation finishes
-function onNavigate (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-  if (isMainFrame) {
+// called when a navigation starts or is redirected. rendererInitiated: the page itself started it (a link, a script;
+// main/viewManager.js). Its address is shown once its page arrives (did-navigate), as in Chrome: shown at the start, a
+// page could put another site's address over its own content with a navigation that never arrives (a 204 No Content
+// answer, a server that never answers). (AGENTS.md section 15, security review B2)
+function onNavigate (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId, rendererInitiated) {
+  if (isMainFrame && !rendererInitiated) {
     onPageURLChange(tabId, url)
   }
+}
+
+// once a tab has stopped loading, its address is the page that's there: a navigation Min showed at its start may not have
+// arrived (a typed address that answers 204 No Content, or turns out to be a download)
+function showLoadedAddress (tabId) {
+  webviews.callAsync(tabId, 'getURL', function (err, url) {
+    const tab = tabs.get(tabId)
+    if (!err && url && tab && tab.url !== url) {
+      onPageURLChange(tabId, url)
+    }
+  })
 }
 
 // called whenever the page finishes loading
@@ -435,6 +449,7 @@ webviews.bindEvent('did-navigate-in-page', function (tabId, url, isMainFrame) {
 })
 
 webviews.bindEvent('did-finish-load', onPageLoad)
+webviews.bindEvent('did-stop-loading', showLoadedAddress)
 
 webviews.bindEvent('page-title-updated', function (tabId, title, explicitSet) {
   const currentTab = tabs.get(tabId)

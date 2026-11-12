@@ -264,12 +264,32 @@ webviews.bindIPC('close-window', function (tabId, args) {
   closeTab(tabId)
 })
 
+// whether a tab shows a file rather than a page, from the response's headers (main/download.js). A page's own navigation
+// only changes the tab's address once the new page arrives (js/webviews.js), so for a tab still on another address it
+// waits for that (and is dropped if the navigation ends without a page, a download for example)
+const pendingFileViews = {} // tab id: {url, isFileView}
 ipc.on('set-file-view', function (e, data) {
+  if (data.tabId) {
+    const tab = tabs.get(data.tabId)
+    if (tab && tab.url === data.url) {
+      tabs.update(data.tabId, { isFileView: data.isFileView })
+    } else {
+      pendingFileViews[data.tabId] = data
+    }
+    return
+  }
   tabs.get().forEach(function (tab) {
     if (tab.url === data.url) {
       tabs.update(tab.id, { isFileView: data.isFileView })
     }
   })
+})
+webviews.bindEvent('did-navigate', function (tabId, url) {
+  const pending = pendingFileViews[tabId]
+  delete pendingFileViews[tabId]
+  if (pending && pending.url === url) {
+    tabs.update(tabId, { isFileView: pending.isFileView })
+  }
 })
 
 searchbar.events.on('url-selected', function (data) {

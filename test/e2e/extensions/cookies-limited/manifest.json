@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: cookies of one site",
+  "version": "1.0",
+  "description": "Test extension for extensions-permissions.js: the cookies permission, with access to 127.0.0.1 only.",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["cookies"],
+  "host_permissions": ["http://127.0.0.1/*"]
+}

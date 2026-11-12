@@ -285,9 +285,13 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
+  // A frame inside another site asks in the name of the site in the address bar, as in Chrome (and only if that site
+  // let the frame ask: <iframe allow="camera">, which Chromium checks before this). By the frame's own site, a site the
+  // user had allowed the camera got it without a prompt inside any other site's frame (security review B6).
   let requestOrigin
   try {
-    requestOrigin = new URL(details.requestingUrl).hostname
+    const topURL = details.isMainFrame === false && webContents && !webContents.isDestroyed() ? webContents.getURL() : ''
+    requestOrigin = new URL(topURL || details.requestingUrl).hostname
   } catch (e) {
     // invalid URL
     console.warn(e, details.requestingUrl)

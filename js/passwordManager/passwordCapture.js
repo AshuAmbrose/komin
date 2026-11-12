@@ -56,6 +56,11 @@ const passwordCapture = {
       return
     }
 
+    // a password manager extension turned off the browser's own offer (chrome.privacy.services.passwordSavingEnabled)
+    if (settings.get('extensionsPasswordSavingOff') === true) {
+      return
+    }
+
     var username = args[0][1] || ''
     var password = args[0][2] || ''
 

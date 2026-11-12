@@ -37,6 +37,20 @@ function isScreenLocked () {
   }
 }
 
+// Whether the display has likely turned off (no input for longer than its timeout): Chromium then counts every page as
+// hidden, like a locked screen, even with Min's window on top (AGENTS.md pitfall 54). {secondsSinceInput, offAfterSeconds,
+// onMains, likelyOff, keptOn}, or null if it couldn't be read. keptOn: run.js kept the display on (keep-display-on.ps1),
+// so likelyOff (which only compares the time since the last input with the timeout) doesn't apply.
+function displayState () {
+  try {
+    const state = JSON.parse(execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'display-state.ps1')], { encoding: 'utf8', timeout: 20000 }))
+    state.keptOn = process.env.MIN_TEST_DISPLAY_KEPT_ON === '1'
+    return state
+  } catch (e) {
+    return null
+  }
+}
+
 // The Chromium version Min runs, for Chrome's update server (it serves the newest version that supports it)
 function chromiumVersion () {
   try {
@@ -181,7 +195,11 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
     }
     server.close()
     const passed = results.filter(r => r.ok).length
-    fs.writeFileSync(outFile, JSON.stringify({ suite: name, packaged, date: new Date().toISOString(), passed, total: results.length, stoppedEarly: stopReason || null, screenLocked: screenLockedAtStart || isScreenLocked(), results }, null, 2))
+    const display = displayState()
+    if (display && display.likelyOff && !display.keptOn) {
+      console.log('warning: no input for ' + display.secondsSinceInput + ' s, so the display has likely turned off and pages counted as hidden (AGENTS.md pitfall 54)')
+    }
+    fs.writeFileSync(outFile, JSON.stringify({ suite: name, packaged, date: new Date().toISOString(), passed, total: results.length, stoppedEarly: stopReason || null, screenLocked: screenLockedAtStart || isScreenLocked(), display, results }, null, 2))
     fs.writeFileSync(logFile, childLog)
     // keep the newest ad-block engine for the next run
     const engine = path.join(profileDir, 'adblocker-engine-v2.bin')
@@ -206,8 +224,9 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
   process.on('SIGINT', () => finish('interrupted'))
 
   function connect (wsUrl) {
-    const ws = new WebSocket(wsUrl); let id = 0; const pending = new Map()
-    ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id) } }
+    const ws = new WebSocket(wsUrl); let id = 0; const pending = new Map(); const listeners = []
+    // replies go to their send(); events (Fetch.requestPaused and the like) to the on() listeners
+    ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id) } else if (d.method) { listeners.forEach(fn => { try { fn(d) } catch (e) {} }) } }
     const ready = new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
     ready.catch(() => {}) // a page that navigated away closes its connection; callers see the failure
     const send = async (method, params = {}) => { await ready; const i = ++id; ws.send(JSON.stringify({ id: i, method, params })); return new Promise(resolve => pending.set(i, resolve)) }
@@ -219,6 +238,7 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
         if (r.error) return 'ERR ' + JSON.stringify(r.error)
         return r.result.exceptionDetails ? 'EXC ' + JSON.stringify(r.result.exceptionDetails).slice(0, 500) : r.result.result.value
       },
+      on: fn => listeners.push(fn),
       close: () => ws.close()
     }
   }
@@ -427,3 +447,4 @@ module.exports.CACHE = CACHE
 module.exports.crxPath = crxPath
 module.exports.downloadExtensions = downloadExtensions
 module.exports.normalizeObserved = normalizeObserved
+module.exports.isScreenLocked = isScreenLocked

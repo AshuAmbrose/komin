@@ -207,7 +207,7 @@ async function loadSite (main, u, site, index) {
   if (!t) return { site, error: 'tab not found' }
   const c = connect(t.webSocketDebuggerUrl)
   const requests = new Map()
-  const stats = { requests: 0, blocked: 0, redirectedAway: 0, failedOther: 0, finished: 0, bytes: 0, adTrackerSeen: 0, adTrackerLoaded: 0, thirdPartyLoaded: 0, exceptions: 0, frames: 0 }
+  const stats = { requests: 0, blocked: 0, redirectedAway: 0, standInRefused: 0, failedOther: 0, finished: 0, bytes: 0, adTrackerSeen: 0, adTrackerLoaded: 0, thirdPartyLoaded: 0, exceptions: 0, frames: 0 }
   const siteBase = baseDomain(hostOf(site))
   let loaded = false
   c.on(async d => {
@@ -241,6 +241,8 @@ async function loadSite (main, u, site, index) {
         if (baseDomain(hostOf(r.url)) !== siteBase) stats.thirdPartyLoaded++
       }
     } else if (d.method === 'Network.loadingFailed') {
+      // a stand-in Chromium refused (Ghostery's data: redirects, section 10.2) fails like a block: counted in both
+      if (/UNSAFE_REDIRECT/.test(p.errorText || '')) stats.standInRefused++
       if (/BLOCKED_BY_CLIENT|UNSAFE_REDIRECT/.test(p.errorText || '')) stats.blocked++
       else stats.failedOther++
     } else if (d.method === 'Runtime.exceptionThrown' && !d.sessionId) {
@@ -351,7 +353,8 @@ async function installExtension () {
     if (!r) return
     const { main, u } = r
     result.startupMs = r.startupMs
-    result.screenLocked = (() => { try { return /LogonUI/i.test(execSync('tasklist /FI "IMAGENAME eq LogonUI.exe"', { encoding: 'utf8' })) } catch (e) { return null } })()
+    // only this Windows session's lock screen counts (AGENTS.md pitfall 45)
+    result.screenLocked = harness.isScreenLocked()
     await main.evaluate(`(() => { const win = ${WIN}; win.setAlwaysOnTop(true); win.focus(); return 1 })()`)
     await sampleCpu(main)
     let c0 = cpuTotal()

@@ -8,7 +8,21 @@ var secondaryButton = document.getElementById('secondary-button')
 var ec = searchParams.get('ec')
 var url = searchParams.get('url')
 
+// the address comes from this page's own address, which anyone who can open the page chooses: only a page address is
+// tried again. A javascript: address would run on this internal page, which can change Min's settings (AGENTS.md
+// section 15, security review A1)
+function isRetryableURL (address) {
+  try {
+    return ['http:', 'https:', 'file:', 'chrome-extension:'].includes(new URL(address).protocol)
+  } catch (e) {
+    return false
+  }
+}
+
 function retry () {
+  if (!isRetryableURL(url)) {
+    return
+  }
   // make the page blank while the replacement page is loading, so it doesn't look like the error condition still exists
   document.body.innerHTML = ''
   document.body.style.backgroundColor = '#fff'
@@ -343,7 +357,7 @@ if (erorDescriptions[ec] === sslError) {
   url = url.replace('https://', 'http://')
 }
 
-if (url) {
+if (url && isRetryableURL(url)) {
   primaryButton.addEventListener('click', function () {
     retry()
   })

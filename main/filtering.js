@@ -85,6 +85,8 @@ var electronABPElementTypeMap = {
 
 var parser = require('./ext/abp-filter-parser-modified/abp-filter-parser.js')
 var { ElectronBlocker, fromElectronDetails } = require('@ghostery/adblocker-electron')
+// the registrable domain (cnn.com for edition.cnn.com), which the engine needs to pick a site's rules; Ghostery uses it too
+var { getDomain: getRegistrableDomain } = require('tldts-experimental')
 var parsedFilterData = {}
 var adblockerEngine = null
 var adblockerEnginePromise = null
@@ -467,18 +469,27 @@ settings.listen('filtering', function (value) {
   setFilteringSettings(value)
 })
 
-function injectCosmeticFiltersForSender (engine, sender, url) {
-  if (!engine || !sender || sender.isDestroyed()) {
-    return
-  }
-  // an extension blocks ads in normal tabs instead (main/extensions.js)
-  if (typeof isExtensionNetworkFilteringOn === 'function' && isExtensionNetworkFilteringOn(sender.session)) {
-    return
+// the domain the engine picks a site's rules by: the registrable domain, not just the hostname without "www.", or rules
+// written for cnn.com would never apply on edition.cnn.com (pitfall 52)
+function getCosmeticDomain (hostname) {
+  return getRegistrableDomain(hostname) || removeWWW(hostname)
+}
+
+// an extension blocks ads in normal tabs instead (main/extensions.js)
+function extensionFiltersSender (sender) {
+  return typeof isExtensionNetworkFilteringOn === 'function' && isExtensionNetworkFilteringOn(sender.session)
+}
+
+// Inserts the page's hiding CSS and runs its scriptlets. With scriptsToCaller, returns the scriptlets instead of running
+// them, for the page's preload to run before the page's own scripts (getCosmeticsForPageStart, below). Returns
+// {active, scriptlets}: active false when no hiding applies to the page (an extension's job, or an exception rule).
+function injectCosmeticFiltersForSender (engine, sender, url, scriptsToCaller) {
+  if (!engine || !sender || sender.isDestroyed() || extensionFiltersSender(sender)) {
+    return { active: false, scriptlets: null }
   }
   const hostname = parser.getUrlHost(url)
-  const domain = removeWWW(hostname)
   const { active, styles, scripts } = engine.getCosmeticsFilters({
-    domain: domain,
+    domain: getCosmeticDomain(hostname),
     hostname: hostname,
     url: url,
     getBaseRules: true,
@@ -488,7 +499,7 @@ function injectCosmeticFiltersForSender (engine, sender, url) {
     getRulesFromDOM: false
   })
   if (active === false) {
-    return
+    return { active: false, scriptlets: null }
   }
   if (styles && styles.length > 0) {
     sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
@@ -502,31 +513,94 @@ function injectCosmeticFiltersForSender (engine, sender, url) {
     const combined = '(() => {\nconst minScriptletGlobals = {};\n' + scripts.map(function (s) {
       return '((scriptletGlobals) => {\ntry {\n' + s + '\n} catch (e) {}\n})(minScriptletGlobals);'
     }).join('\n') + '\n})();'
+    if (scriptsToCaller) {
+      return { active: true, scriptlets: combined }
+    }
     sender.executeJavaScript(combined).catch(function () {})
   }
+  return { active: true, scriptlets: null }
 }
 
-ipc.on('inject-cosmetic-filters', function (event, url) {
+function cosmeticFiltersApply (event, url) {
   if (enabledFilteringOptions.blockingLevel === 0 || !url) {
-    return
+    return false
   }
   if (!(url.startsWith('http://') || url.startsWith('https://'))) {
-    return
+    return false
   }
   const domain = parser.getUrlHost(url)
   if (domain && requestDomainIsException(domain)) {
-    return
+    return false
   }
-  if (!event.sender || event.sender.isDestroyed()) {
-    return
+  return !!event.sender && !event.sender.isDestroyed()
+}
+
+// whether a message came from its tab's top frame (the hiding CSS and the scriptlets are for the tab's main frame)
+function cosmeticSenderIsTopFrame (event) {
+  const mainFrame = event.sender && !event.sender.isDestroyed() && event.sender.mainFrame
+  return !!mainFrame && event.processId === mainFrame.processId && event.frameId === mainFrame.routingId
+}
+
+// For a page's preload as the page starts: the ad blocker's part of the answer to the frame's one request, page-start
+// (main/userscripts.js; sync: the page waits for it, about 1 ms on YouTube). Inserts the hiding CSS and returns
+// {scriptlets, dom, whileLoading}: the scriptlets to run now, whether to report the page's classes, ids and links (dom),
+// and whether to start that while the page is still arriving (the setting hideAdSpacesWhileLoading, off unless true:
+// it costs about 3–5 MB a tab) rather than once it's parsed. null when no hiding applies: not a tab's top frame, not
+// http(s), blocking off, or off for this site.
+function getCosmeticsForPageStart (event, url) {
+  if (!cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url)) {
+    return null
   }
+  const whileLoading = settings.get('hideAdSpacesWhileLoading') === true
   if (adblockerEngine) {
-    injectCosmeticFiltersForSender(adblockerEngine, event.sender, url)
-  } else if (adblockerEnginePromise) {
+    const result = injectCosmeticFiltersForSender(adblockerEngine, event.sender, url, true)
+    return { scriptlets: result.scriptlets, dom: result.active, whileLoading }
+  }
+  if (adblockerEnginePromise) {
+    // the engine is still loading (just after startup): it all comes once it's ready, a round trip later
     adblockerEnginePromise.then(function (engine) {
       if (engine && event.sender && !event.sender.isDestroyed()) {
         injectCosmeticFiltersForSender(engine, event.sender, url)
       }
     })
+    return { scriptlets: null, dom: !extensionFiltersSender(event.sender), whileLoading }
+  }
+  return null
+}
+
+// Generic hiding rules. The engine keeps most generic rules (EasyList's ##.ad-slot and the like) in lookups by class, id
+// and link, and only returns them for the ones a page has. The page's preload reports those (all of them once the
+// document is parsed, then new ones as the page changes; js/preload/default.js), as Ghostery's own content script does,
+// and gets the matching rules as CSS.
+const COSMETIC_DOM_LIMIT = 5000
+function cosmeticDomList (value) {
+  return Array.isArray(value) ? value.filter(s => typeof s === 'string' && s.length > 0 && s.length < 1000).slice(0, COSMETIC_DOM_LIMIT) : []
+}
+
+ipc.on('cosmetic-filters-dom', function (event, url, found) {
+  // the top frame's preload reports
+  if (!adblockerEngine || !found || !cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url) || extensionFiltersSender(event.sender)) {
+    return
+  }
+  try {
+    const hostname = parser.getUrlHost(url)
+    const { active, styles } = adblockerEngine.getCosmeticsFilters({
+      domain: getCosmeticDomain(hostname),
+      hostname: hostname,
+      url: url,
+      classes: cosmeticDomList(found.classes),
+      ids: cosmeticDomList(found.ids),
+      hrefs: cosmeticDomList(found.hrefs),
+      getBaseRules: false,
+      getInjectionRules: false,
+      getExtendedRules: false,
+      getRulesFromHostname: false,
+      getRulesFromDOM: true
+    })
+    if (active !== false && styles && styles.length > 0) {
+      event.sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
+    }
+  } catch (e) {
+    console.warn('generic cosmetic filters failed for ' + url, e)
   }
 })

@@ -11,6 +11,9 @@
    - adds the APIs main/extensionAPIs.js provides (screenshots, a page's language, tabs.discard, downloads, privacy,
      identity, side panels, browsing data, search, speech), and action.setIcon with imageData. They call main through
      the library's router ("crx-msg"), as its own APIs do;
+   - takes away the APIs Chrome only gives with a permission the extension didn't declare (cookies, webNavigation,
+     notifications, contextMenus): the library gives them to every extension (main/extensionPermissions.js checks each
+     call too);
    - puts the finished API objects back after Chromium rebuilds them (whenever any extension is loaded or unloaded). */
 
 ;(function () {
@@ -78,6 +81,19 @@
     // offscreen documents only have runtime messaging, as in Chrome
     const manifest = typeof chrome.runtime.getManifest === 'function' ? chrome.runtime.getManifest() : null
     const permissions = new Set(((manifest && manifest.permissions) || []).filter(p => typeof p === 'string'))
+
+    // APIs the library gives every extension, which Chrome only gives with their permission: gone unless the extension
+    // declared it (as optional counts: main refuses each call until the user has granted it, main/extensionPermissions.js)
+    if (manifest) {
+      const declared = new Set([...permissions, ...(Array.isArray(manifest.optional_permissions) ? manifest.optional_permissions : [])])
+      ;['cookies', 'webNavigation', 'notifications', 'contextMenus'].forEach(function (name) {
+        if (!declared.has(name)) {
+          try {
+            delete chrome[name]
+          } catch (e) {}
+        }
+      })
+    }
 
     /* Lifecycle events (background workers) */
 

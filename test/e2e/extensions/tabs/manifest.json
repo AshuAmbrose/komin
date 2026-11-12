@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Min test: tabs",
+  "version": "1.0",
+  "description": "Test extension for extensions-tabs.js: records which of Min's tabs it sees, in what order, and the tab events it gets.",
+  "background": { "service_worker": "sw.js" },
+  "permissions": ["tabs"]
+}

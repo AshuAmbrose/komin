@@ -143,8 +143,10 @@ async function waitFor (fn, ms = 15000) {
     check('the four script files are in the profile', out.scriptFiles.length === 4, out.scriptFiles)
     check('Settings lists the four, from raw.githubusercontent.com', (out.settingsList || []).length === 4 && out.settingsList.every(i => i.includes('From raw.githubusercontent.com')), out.settingsList)
     const page = name => out.pages[name] || {}
+    // the tab's menu commands, or [] when the tab wasn't found ('no tab': the page didn't load, a network failure)
+    const commands = name => Array.isArray(page(name).menuCommands) ? page(name).menuCommands : []
     check('GitHub file page: the scripts added their styles', (page('githubFile').checks || {}).styles >= 1, page('githubFile').checks)
-    check('GitHub file page: the whitespace script\'s menu command is offered', (page('githubFile').menuCommands || []).some(c => c.startsWith('Set GitHub Code White Space')), page('githubFile').menuCommands)
+    check('GitHub file page: the whitespace script\'s menu command is offered', commands('githubFile').some(c => c.startsWith('Set GitHub Code White Space')), page('githubFile').menuCommands)
     check('GitHub folder page: the scripts added their styles', (page('githubTree').checks || {}).styles >= 1, page('githubTree').checks)
     check('no userscript errors on the pages', Object.values(out.pages).every(p => (p.userscriptErrors || []).length === 0), Object.fromEntries(Object.entries(out.pages).map(([k, p]) => [k, p.userscriptErrors])))
     check('YouTube with Return YouTube Dislike (info)', true, page('youtube').checks)

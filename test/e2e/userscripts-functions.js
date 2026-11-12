@@ -174,14 +174,15 @@ const server = http.createServer((req, res) => {
 
 const WRAP_MAIN = `(() => {
   const { ipcMain, clipboard, session } = process.mainModule.require('electron')
-  const original = ipcMain.listeners('userscripts-get')[0]
-  ipcMain.removeAllListeners('userscripts-get')
+  const original = ipcMain.listeners('page-start')[0]
+  ipcMain.removeAllListeners('page-start')
   global.__usLog = []
-  ipcMain.on('userscripts-get', (e) => {
+  ipcMain.on('page-start', (e, url) => {
     const t = process.hrtime.bigint()
-    original(e)
+    original(e, url)
     const ms = Number(process.hrtime.bigint() - t) / 1e6
-    global.__usLog.push({ frameUrl: e.senderFrame && e.senderFrame.url, ms, bytes: e.returnValue ? JSON.stringify(e.returnValue).length : 0, scripts: e.returnValue ? e.returnValue.map(s => s.name) : null })
+    const us = e.returnValue && e.returnValue.userscripts
+    global.__usLog.push({ frameUrl: e.senderFrame && e.senderFrame.url, ms, bytes: us ? JSON.stringify(us).length : 0, scripts: us ? us.map(s => s.name) : null })
   })
   Promise.resolve(clipboard.readText()).then(t => { global.__savedClipboard = t })
   // save GM_download files to the scratchpad instead of showing a save dialog

@@ -57,6 +57,11 @@ var settings = {
 }
 
 window.addEventListener('message', function (e) {
+  // only from this page's preload (js/util/settings/settingsPreload.js), never from another window: a website that
+  // opened this page as a popup could post it made-up settings, which the page would then save (security review B1)
+  if (e.source !== window || !e.data) {
+    return
+  }
   if (e.data.message && e.data.message === 'receiveSettingsData') {
     settings.list = e.data.settings
 

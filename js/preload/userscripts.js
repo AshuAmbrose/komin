@@ -573,7 +573,8 @@ ipc.on('userscripts-run-script', function (e, script) {
 })
 
 if (window.location.protocol === 'http:' || window.location.protocol === 'https:' || window.location.protocol === 'file:') {
-  const matchingUserscripts = ipc.sendSync('userscripts-get')
+  // they came with this frame's request to main as it started (js/preload/default.js)
+  const matchingUserscripts = minPageStart && minPageStart.userscripts
   if (matchingUserscripts) {
     runUserscriptsInFrame(matchingUserscripts)
   }

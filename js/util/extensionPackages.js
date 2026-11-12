@@ -138,6 +138,13 @@ function compareExtensionVersions (a, b) {
   return 0
 }
 
+// Whether a manifest's "version" is one Chrome accepts: one to four whole numbers from 0 to 65535, separated by dots.
+// Min also makes it the name of the extension's folder, so anything else is refused: ".." made that folder the
+// extensions folder itself, and installing deleted every other extension (security review A2).
+function isValidExtensionVersion (version) {
+  return typeof version === 'string' && /^\d{1,5}(\.\d{1,5}){0,3}$/.test(version) && version.split('.').every(part => Number(part) <= 65535)
+}
+
 // the address that answers whether these extensions ({id, version}) have updates; Chrome's update protocol (gupdate)
 function getExtensionUpdateCheckURL (updateURL, extensions, chromeVersion) {
   return updateURL + (updateURL.includes('?') ? '&' : '?') + 'response=updatecheck&acceptformat=crx3&prodversion=' + encodeURIComponent(chromeVersion) +
@@ -186,10 +193,12 @@ function parseExtensionUpdateResponse (xml) {
 const EXTENSION_MAX_UNPACKED_SIZE = 512 * 1024 * 1024
 const EXTENSION_MAX_ZIP_ENTRIES = 20000
 
-// a zip entry's name as a safe relative path, or null for a name that would escape the folder
+// a zip entry's name as a safe relative path, or null for a name that would escape the folder. Any colon is refused
+// (not only a drive letter's): on Windows "manifest.json::$DATA" names manifest.json itself, an NTFS data stream
+// (security review A3).
 function safeExtensionZipPath (name) {
   const parts = name.replace(/\\/g, '/').split('/').filter(part => part !== '' && part !== '.')
-  if (parts.length === 0 || parts.some(part => part === '..' || /^[a-zA-Z]:/.test(part)) || name.startsWith('/')) {
+  if (parts.length === 0 || parts.some(part => part === '..' || part.includes(':')) || name.startsWith('/')) {
     return null
   }
   return parts.join('/')
@@ -335,6 +344,40 @@ function getExtensionPermissionIncrease (oldManifest, newManifest) {
   return increase.allSites || increase.sites.length || increase.items.length || increase.other.length ? increase : null
 }
 
+// Whether a host pattern an extension declared covers one it asks for: the same pattern, or a narrower one
+// (chrome.permissions.request may only ask for what the manifest lists). "<all_urls>" covers everything, "*://*/*" every
+// http and https site, "https://*.example.com/*" example.com and its subdomains on https.
+function extensionHostPatternCovers (declared, requested) {
+  if (typeof declared !== 'string' || typeof requested !== 'string') {
+    return false
+  }
+  if (declared === requested || declared === '<all_urls>') {
+    return true
+  }
+  const parse = pattern => /^(\*|[a-z][a-z0-9+.-]*):\/\/([^/]*)(\/.*)$/i.exec(pattern)
+  const wide = parse(declared)
+  const narrow = parse(requested)
+  if (!wide || !narrow) {
+    return false
+  }
+  const [wideScheme, wideHost, widePath] = [wide[1].toLowerCase(), wide[2].toLowerCase(), wide[3]]
+  const [scheme, host, path] = [narrow[1].toLowerCase(), narrow[2].toLowerCase(), narrow[3]]
+  if (wideScheme !== scheme && !(wideScheme === '*' && (scheme === 'http' || scheme === 'https'))) {
+    return false
+  }
+  if (wideHost !== '*' && wideHost !== host) {
+    if (!wideHost.startsWith('*.') || host === '*') {
+      return false
+    }
+    const domain = wideHost.slice(2)
+    const asked = host.startsWith('*.') ? host.slice(2) : host
+    if (asked !== domain && !asked.endsWith('.' + domain)) {
+      return false
+    }
+  }
+  return widePath === '/*' || widePath === path
+}
+
 /*
 A manifest command's suggested_key ("Alt+Shift+D", or {default, windows, mac, linux}) as a key combo for Min's
 js/keybindings.js ("alt+shift+d"), or null if it isn't one Chrome would accept. Chrome's rules: Ctrl, Alt or (on a Mac)
@@ -375,6 +418,7 @@ if (typeof module !== 'undefined') {
     extensionIdFromPublicKey,
     parseCrx,
     compareExtensionVersions,
+    isValidExtensionVersion,
     getExtensionUpdateCheckURL,
     getWebStoreDownloadURL,
     parseExtensionUpdateResponse,
@@ -383,6 +427,7 @@ if (typeof module !== 'undefined') {
     getExtensionManifestText,
     describeExtensionPermissions,
     getExtensionPermissionIncrease,
+    extensionHostPatternCovers,
     getExtensionShortcutCombo,
     extensionUsesNetworkFiltering
   }

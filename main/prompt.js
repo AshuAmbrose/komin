@@ -1,10 +1,11 @@
 /* Simple input prompt. */
 
-var promptAnswer
-var promptOptions
+// each prompt window's options and answer, by its webContents id. One shared pair let two prompts open at once (two
+// sites asking to sign in) both show the second one's text, so a password typed for one site went to the other
+// (security review B5)
+const openPrompts = new Map()
 
 function createPrompt (options, callback) {
-  promptOptions = options
   const { parent, width = 360, height = 140 } = options
 
   var promptWindow = new BrowserWindow({
@@ -25,9 +26,14 @@ function createPrompt (options, callback) {
     }
   })
 
+  const promptId = promptWindow.webContents.id
+  openPrompts.set(promptId, { options, answer: undefined })
+
   promptWindow.on('closed', () => {
     promptWindow = null
-    callback(promptAnswer)
+    const entry = openPrompts.get(promptId)
+    openPrompts.delete(promptId)
+    callback(entry ? entry.answer : undefined)
   })
 
   // Load the HTML dialog box
@@ -40,6 +46,12 @@ ipc.on('show-prompt', function (options, callback) {
 })
 
 ipc.on('open-prompt', function (event) {
+  const entry = openPrompts.get(event.sender.id)
+  if (!entry) {
+    event.returnValue = JSON.stringify({})
+    return
+  }
+  const promptOptions = entry.options
   event.returnValue = JSON.stringify({
     label: promptOptions.text,
     ok: promptOptions.ok,
@@ -50,7 +62,10 @@ ipc.on('open-prompt', function (event) {
 })
 
 ipc.on('close-prompt', function (event, data) {
-  promptAnswer = data
+  const entry = openPrompts.get(event.sender.id)
+  if (entry) {
+    entry.answer = data
+  }
 })
 
 ipc.on('prompt', function (event, data) {

@@ -200,11 +200,6 @@
     "sslTimeErrorMessage": "Min couldn't connect securely to this website. Please make sure your computer's clock is set correctly.",
     "addressInvalidTitle": "This address is invalid.",
     "genericError": "An error occurred",
-    /* pages/phishing/index.html */
-    "phishingErrorTitle": "This site could harm you.",
-    "phishingErrorMessage": "This website could be trying to steal your personal information, such as passwords or banking information.",
-    "phishingErrorVisitAnyway": "Visit site anyway",
-    "phishingErrorLeave": "Leave this site",
     /* multiple instances alert */
     "multipleInstancesErrorMessage": "An error occurred. Please close any other open instances and restart Min.",
     /* pages/sessionRestoreError/index.html */
@@ -268,11 +263,13 @@
     "settingsUserscriptsRunsOn": "Runs on: %s", //%s is a list of websites
     "settingsUserscriptsLegacy": "Older Min script (no metadata block)",
     "settingsPerformanceHeading": "Performance",
-    "settingsPerformanceExplanation": "Min keeps its memory and CPU use low, so your other programs have more room. Each option here trades some speed for less memory.",
+    "settingsPerformanceExplanation": "Min keeps its memory and CPU use low, so your other programs have more room. Each option here says what it saves and what it costs.",
     "settingsTrimBackgroundTabsToggle": "Free up memory from background tabs while you use Min",
     "settingsTrimBackgroundTabsExplanation": "Tabs you haven't looked at for 30 seconds give their memory back to Windows, which hands it to other programs first. Pro: more free memory for everything else. Con: when your computer runs short of memory, going back to one of those tabs can take a moment. Tabs playing sound or video, in a call or sharing your screen are left alone. With this off, background tabs give back memory only while Min isn't in use.",
     "settingsOptimizeJavaScriptToggle": "Make websites' JavaScript use less memory",
     "settingsOptimizeJavaScriptExplanation": "Tells the JavaScript engine to favor memory over speed. Pro: it may save some memory on some pages, although Min's tests on four popular sites found no difference. Con: JavaScript-heavy sites and web apps run about a quarter slower. Takes effect after Min restarts.",
+    "settingsHideAdSpacesWhileLoadingToggle": "Hide empty ad spaces while pages are still loading",
+    "settingsHideAdSpacesWhileLoadingExplanation": "Min hides the empty spaces websites keep for ads. Normally it does so once a page has fully arrived. With this on, it starts as the page begins to arrive. Pro: on big news sites, an empty ad box no longer shows for up to a second and a half, and the text below it doesn't jump when it goes. Con: each tab you load while looking at it keeps about 3 to 5 MB more memory, even when Min is minimized, and pages take a little more processor time while they load. It doesn't make pages faster. Applies to pages loaded after you change it, while Min's own ad blocking is in use.",
     "settingsExtensionsHeading": "Extensions",
     "settingsExtensionsExplanation": "Chrome extensions add features to Min. Each one you turn on uses some memory and CPU, even while Min is in the background.",
     "settingsExtensionsInstallCrx": "Install from a .crx file…",

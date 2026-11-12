@@ -1,7 +1,8 @@
 /* Chrome extensions run in main (main/extensions.js, main/extensionAPIs.js). This draws their toolbar buttons and runs
    their keyboard shortcuts; opens, switches to and closes tabs when an extension asks (chrome.tabs.create,
    update({active: true}), remove; windows.create); makes room for an extension's side panel and draws its title bar;
-   searches (chrome.search) and speaks (chrome.tts) for them. */
+   searches (chrome.search) and speaks (chrome.tts) for them; while extensions run, sends main this window's tabs in order
+   (main/extensionTabs.js). */
 
 var webviews = require('webviews.js')
 var browserUI = require('browserUI.js')
@@ -16,6 +17,9 @@ const extensions = {
   registeredCombos: new Set(),
   // state: {buttons: [{id, title, badgeText, badgeColor, icon}], commands: [{extensionId, name, combo}]} from main
   showToolbar: function (state) {
+    if (state.tabList) {
+      extensions.startTabList()
+    }
     const buttons = JSON.stringify(state.buttons)
     if (buttons !== extensions.renderedButtons) {
       extensions.renderedButtons = buttons
@@ -190,8 +194,39 @@ const extensions = {
       speechSynthesis.speak(utterance)
     }
   },
+  // Min's tabs as extensions should see them: every task's tabs in order (private tabs never), sent after each change
+  sendingTabList: false,
+  startTabList: function () {
+    if (extensions.sendingTabList) {
+      return
+    }
+    extensions.sendingTabList = true
+    const send = debounce(function () {
+      ipc.send('extensions-tab-list', tasks.map(task => ({
+        selectedHere: task.selectedInWindow === windowId,
+        selectedInAnyWindow: !!task.selectedInWindow,
+        tabs: task.tabs.get().filter(tab => !tab.private).map(tab => ({
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+          muted: !!tab.muted,
+          favicon: tab.favicon ? tab.favicon.url : undefined,
+          hasView: webviews.hasViewForTab(tab.id)
+        }))
+      })))
+    }, 100)
+    // not after changes the list doesn't carry: a tab's scroll position changes with every scroll
+    const notListed = ['scrollPosition', 'lastActivity', 'previewImage', 'themeColor', 'backgroundColor', 'secure', 'readerable', 'hasAudio', 'isFileView']
+    tasks.on('*', function (name, id, key) {
+      if (name !== 'tab-updated' || !notListed.includes(key)) {
+        send()
+      }
+    })
+    send()
+  },
   initialize: function () {
     ipc.invoke('extensions-toolbar-get').then(extensions.showToolbar)
+    ipc.on('extensions-tab-list-wanted', () => extensions.startTabList())
     ipc.on('extensions-toolbar', (e, state) => extensions.showToolbar(state))
 
     ipc.on('extensions-open-tab', function (e, data) {
@@ -201,6 +236,34 @@ const extensions = {
         openInBackground: !data.active
       })
       ipc.send('extensions-tab-opened', { requestId: data.requestId, tabId: newTab })
+    })
+
+    // an extension reloaded a discarded tab (hibernated, or not loaded yet), or gave it a new address: its page loads
+    // again, in the background (main/extensionTabs.js). data: {tabId, url}
+    ipc.on('extensions-load-tab', function (e, data) {
+      const task = tasks.getTaskContainingTab(data.tabId)
+      if (!task) {
+        return
+      }
+      if (data.url) {
+        task.tabs.update(data.tabId, { url: data.url })
+      }
+      if (webviews.hasViewForTab(data.tabId)) {
+        if (data.url) {
+          webviews.update(data.tabId, data.url)
+        }
+      } else if (task.id === tasks.getSelected().id) {
+        // only a tab of the task shown here: webviews.add reads that task's tabs. Any other loads when it's shown
+        webviews.add(data.tabId)
+      }
+    })
+
+    // an extension muted or unmuted a discarded tab: kept with the tab, for when its page loads. data: {tabId, muted}
+    ipc.on('extensions-mute-tab', function (e, data) {
+      const task = tasks.getTaskContainingTab(data.tabId)
+      if (task) {
+        task.tabs.update(data.tabId, { muted: !!data.muted })
+      }
     })
 
     ipc.on('extensions-select-tab', function (e, tabId) {
