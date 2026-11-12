@@ -197,7 +197,8 @@ ipc.on('enterPictureInPicture', function (event, data) {
 })
 
 window.addEventListener('message', function (e) {
-  if (!e.origin.startsWith('min://')) {
+  // only an internal page asking for itself, not another window
+  if (!e.origin.startsWith('min://') || e.source !== window) {
     return
   }
 

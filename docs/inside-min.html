@@ -174,7 +174,7 @@ dl.glossary dd { margin: 0; color: var(--fg); }
   <p class="eyebrow">A beginner's guide to the browser in D:\Ashmin-Gold</p>
   <h1>Inside Min</h1>
   <p class="lede">Your browser is a fork of Min, built on Electron. This guide explains how it works, from the processes Windows lists in Task Manager down to the line of code that decides whether an ad loads. Read it in order the first time, since each chapter builds on the one before.</p>
-  <p class="facts"><span><code>master</code> at <code>e53ee61a</code>, plus the branch <code>chore/unlocked-remeasure</code></span><span>Electron 45.2.2 (Chromium 156)</span><span>Ghostery adblocker 2.20.1</span><span>Updated 10 November 2026</span></p>
+  <p class="facts"><span><code>master</code> at <code>e53ee61a</code>, plus the branch <code>chore/unlocked-remeasure</code></span><span>Electron 45.2.2 (Chromium 156)</span><span>Ghostery adblocker 2.20.1</span><span>Updated 13 November 2026</span></p>
   <div class="legend" aria-label="Legend: where code runs">
     <strong>Where the code runs:</strong>
     <span class="chip main">Main process</span>
@@ -207,8 +207,9 @@ dl.glossary dd { margin: 0; color: var(--fg); }
       <li><a href="#electron"><span class="n">16</span><span>Keeping Electron current</span><span class="done">✓</span></a></li>
       <li><a href="#debug"><span class="n">17</span><span>Debugging toolkit</span><span class="done">✓</span></a></li>
       <li><a href="#extensions"><span class="n">18</span><span>Chrome extensions</span><span class="done">✓</span></a></li>
-      <li><a href="#exercises"><span class="n">19</span><span>Exercises</span><span class="done">✓</span></a></li>
-      <li><a href="#glossary"><span class="n">20</span><span>Glossary</span><span class="done">✓</span></a></li>
+      <li><a href="#security"><span class="n">19</span><span>Security: keeping websites in their place</span><span class="done">✓</span></a></li>
+      <li><a href="#exercises"><span class="n">20</span><span>Exercises</span><span class="done">✓</span></a></li>
+      <li><a href="#glossary"><span class="n">21</span><span>Glossary</span><span class="done">✓</span></a></li>
     </ol>
     <p class="toc-note">Tick "I've read this" at the end of a chapter to mark it here. The ticks are saved in this browser only.</p>
   </details>
@@ -1552,9 +1553,79 @@ npm run test:e2e</pre>
 </section>
 
 <!-- 19 -->
-<section class="chapter prose" id="exercises" data-chapter>
+<section class="chapter prose" id="security" data-chapter>
   <div class="chapter-head">
     <span class="chapter-num">Chapter 19</span>
+    <h2>Security: keeping websites in their place</h2>
+    <p class="chapter-intro">A browser's first job is to keep whatever a website does inside that website. In November 2026 a review of Min's code listed 14 ways it might fail at that. Each one was tried for real before anything changed: 13 were real, and all 13 are fixed.</p>
+  </div>
+  <p>Chapter 02 showed the big walls: websites run in sandboxed processes without Node.js, and Min's own interface runs somewhere else. This chapter is about the smaller doors in those walls, the places where Min deliberately lets a page ask for something, and what happens when a website knocks on one it shouldn't.</p>
+
+  <h3>Min's own pages are special</h3>
+  <p>Settings, the "server not found" page, the new tab page, the userscript install page and the PDF viewer are web pages too, at addresses starting with <code>min://app/</code>. But they're trusted: through the preload (Chapter 08) they can change any setting, install userscripts, and turn extensions on and off. And they all share one <strong>origin</strong> (the scheme and host of an address, here <code>min://app</code>), which is the unit browsers use to decide who may touch whose page.</p>
+  <p>Many of them also read their own address. The error page is <code>min://app/pages/error/index.html?ec=-105&amp;url=https://example.com</code>: its "Try again" button goes to whatever <code>url=</code> says. That's fine while only Min opens these pages. Until 13 November, a website could too:</p>
+  <ol>
+    <li>A website runs <code>location.href = 'min://app/pages/error/index.html?url=javascript:…'</code>. Nothing stopped a page from sending its own tab to Min's error page.</li>
+    <li>The error page shows "Server not found", with its "Try again" button already selected. Pressing Enter, or clicking it, sets <code>window.location</code> to the <code>javascript:</code> address, which doesn't go anywhere: it runs the code after the colon, inside Min's own page.</li>
+    <li>That code asks Min, as Settings would, to change a setting. The test suite did exactly this, and the setting changed. A real attacker could have turned off ad and tracker blocking, or pointed Min at a proxy of their own.</li>
+  </ol>
+  <div class="fork">
+    <span class="callout-label">The fix: two locks</span>
+    <ul>
+      <li><strong>Websites can't go to <code>min:</code> addresses.</strong> <code>main/viewManager.js</code> refuses any navigation, redirect or new window to a <code>min:</code> address unless Min itself started it (the address bar, opening a PDF, the error page after a failed load) or one of Min's own pages did. Chromium tells main who started each navigation (its <em>initiator</em>), so this is a few lines.</li>
+      <li><strong>Every internal page treats its own address as untrusted input.</strong> Extensions may still open Min's pages, as Chrome lets them open <code>chrome://</code> pages, so the pages themselves must be safe. The error page only tries again with web addresses, and has a <strong>CSP</strong> that forbids inline code, so a <code>javascript:</code> address couldn't run anyway. The userscript install page only reads a file from your disk if Min itself opened the page for that file: before, an extension with no permissions at all could have it read any file.</li>
+    </ul>
+  </div>
+
+  <h3>The address bar must tell the truth</h3>
+  <p>The address bar is how you know which website you're talking to. Min used to change it as soon as a navigation <em>started</em>. So a page could start going somewhere that never arrives: a server that answers "204 No Content" (nothing to show) leaves the old page on screen. The test page did <code>location.href = 'http://localhost:…/nocontent'</code>, and Min showed the other site's address above the first site's page. With a bank's address there, that's a convincing fake.</p>
+  <p>Chrome's rule, which Min follows now: when Min starts a navigation (you typed an address), it shows the new address at once; when the <em>page</em> starts one (a link, a script), the address changes only when the new page actually arrives. And if a navigation ends without a page, the address goes back to the page that's really there.</p>
+  <div class="note">
+    <span class="callout-label">What it changed elsewhere</span>
+    <p>Parts of Min found a tab by the address it was going to. The PDF viewer did: after the fix, a PDF opened from a link never showed, because the tab still had the old address. The suites caught it, and the main process now tells the interface the tab's <em>id</em> instead. Lesson for later: find tabs by id, never by address.</p>
+  </div>
+
+  <h3>The rest, in one table</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What the test did</th><th>What happened before</th><th>Now</th></tr></thead>
+      <tbody>
+        <tr><td>A website opened Settings in a popup and posted it made-up settings</td><td>The page took them</td><td>Min's pages only take messages from themselves</td></tr>
+        <tr><td>Two websites asked you to sign in at the same moment</td><td>Both dialogs said "Sign in to localhost", and the name typed for one site went to the other</td><td>Each dialog keeps its own text and answer (<code>main/prompt.js</code>)</td></tr>
+        <tr><td>A site you'd allowed the camera, shown inside another site's frame</td><td>It got the camera there without asking you</td><td>A frame asks in the name of the site in the address bar, as in Chrome</td></tr>
+        <tr><td>A website made a redirect loop, then showed a PDF</td><td>Main's check for the PDF viewer went round the loop forever and failed; in the installed app that's an error dialog that freezes Min</td><td>The check visits each address once (<code>main/download.js</code>)</td></tr>
+        <tr><td>A userscript allowed to reach one site asked it for a page that redirects elsewhere</td><td>It got the other site's answer, with your cookies</td><td>Redirects must stay within the sites its <code>@connect</code> lists</td></tr>
+        <tr><td>Two install pages for the same userscript address</td><td>The first page's Install button installed what the second page fetched</td><td>Each page installs what it showed</td></tr>
+        <tr><td>An extension package whose version was <code>..</code></td><td>Installing it deleted every other extension (the version becomes a folder name, and <code>..</code> means "the folder above")</td><td>Versions must look like Chrome's: up to four numbers</td></tr>
+        <tr><td>A package with both <code>manifest.json</code> and <code>MANIFEST.JSON</code></td><td>Windows treats them as one file, so the second replaced the manifest you'd reviewed: "no special permissions" became cookies on every site</td><td>The reviewed manifest is written last and read back</td></tr>
+        <tr><td>An extension's update server offered an older version</td><td>Min installed it</td><td>Updates must be newer, as in Chrome</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The one report that wasn't real: an extension's hidden helper page (an offscreen document, Chapter 18) has no context isolation, and the review wondered whether its code could reach Min's internal messaging. The test looked: <code>require</code> and <code>process</code> don't exist there, so it can't.</p>
+
+  <h3>How the review was checked</h3>
+  <p>The review was done by reading code, which finds possibilities. A rule for this project is not to fix problems that don't happen, so the suite <code>test/e2e/security-checks.js</code> plays the attacker for each report: a little test website on port 8791, crafted extension packages (built by <code>test/e2e/make-crx.js</code>), a userscript, two sign-in pages. Each check passes when Min is safe. Run before any fix, 13 of its checks failed; after the fixes all 17 pass, and it's part of every full test run now.</p>
+  <div class="try">
+    <span class="callout-label">Try it</span>
+    <ol>
+      <li>Run <code>node test/e2e/security-checks.js A1 B2</code> to try only the internal-page and address-bar attacks. Watch Min's window: the attacker page tries four ways into Min's pages, then the address bar test.</li>
+      <li>Read <code>test/e2e/results/security-checks.json</code>: each check's details say what the test saw, for example the address bar and the real page side by side.</li>
+    </ol>
+  </div>
+
+  <h3>What's left</h3>
+  <ul>
+    <li><strong>A decision, not a bug:</strong> the ad blocker downloads the code of its scriptlets (Chapter 10) along with its filter lists, and that code runs on every website. Whoever could change that file could run code on every site you visit. uBlock Origin ships its scriptlets inside the extension instead. Keeping a checked copy in Min would mean updating it by hand; nothing has changed yet.</li>
+    <li>The review's smaller reports (cookies sent with userscript downloads, the "open in app" prompt, and others) haven't been tried yet. AGENTS.md section 15 lists them; each gets a check in <code>security-checks</code> before any fix.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="security"> I've read this</label>
+</section>
+
+<!-- 20 -->
+<section class="chapter prose" id="exercises" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 20</span>
     <h2>Exercises</h2>
     <p class="chapter-intro">Small, safe changes that touch each part of the browser. Do them in order, on a new branch, with <code>npm start</code> running.</p>
   </div>
@@ -1647,10 +1718,10 @@ module.exports = { initialize }</pre>
   <label class="read-toggle"><input type="checkbox" data-read="exercises"> I've read this</label>
 </section>
 
-<!-- 20 -->
+<!-- 21 -->
 <section class="chapter prose" id="glossary" data-chapter>
   <div class="chapter-head">
-    <span class="chapter-num">Chapter 20</span>
+    <span class="chapter-num">Chapter 21</span>
     <h2>Glossary</h2>
   </div>
   <dl class="glossary">
@@ -1679,6 +1750,7 @@ module.exports = { initialize }</pre>
     <dt>Main process</dt><dd>The single, privileged process that starts first and controls windows, tabs, the network and files.</dd>
     <dt>Manifest</dt><dd>An extension's <code>manifest.json</code>: its name, version, permissions and files.</dd>
     <dt>Memory priority</dt><dd>Windows' ranking of whose memory to take first when RAM runs short, from 0 to 7 (normal is 5). Min gives background tabs 2.</dd>
+    <dt>Origin</dt><dd>The scheme, host and port of an address (<code>https://example.com</code>, <code>min://app</code>). Browsers let pages of one origin read each other, and keep different origins apart.</dd>
     <dt>Occlusion</dt><dd>A window being completely covered by other windows. Chromium can treat a covered window as hidden.</dd>
     <dt>Preload script</dt><dd>Min code that runs inside every page before the page's own scripts, and can message the main process.</dd>
     <dt>Private bytes</dt><dd>Memory Windows has reserved for one process, whether it's in RAM or not. Trimming doesn't lower it; closing the process does.</dd>
@@ -1689,6 +1761,7 @@ module.exports = { initialize }</pre>
     <dt>Session</dt><dd>A set of cookies, cache and storage. Normal tabs share one; each private tab gets its own.</dd>
     <dt>Site isolation</dt><dd>Chromium putting each website, and its cross-site frames, in separate processes.</dd>
     <dt>SPA</dt><dd>A single-page app, like YouTube, that changes pages without reloading. That's why some code also listens for <code>pushState</code>.</dd>
+    <dt>Spoofing</dt><dd>Making something look like what it isn't: another site's address over your own page, or one extension posing as another.</dd>
     <dt>Squirrel</dt><dd>The Windows installer and updater system Min's setup file uses.</dd>
     <dt>Task</dt><dd>Min's name for a group of tabs.</dd>
     <dt>User agent</dt><dd>The text a browser sends to identify itself, such as "Chrome/150 on Windows".</dd>

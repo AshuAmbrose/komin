@@ -56,11 +56,26 @@ function downloadHandler (event, item, webContents) {
   return true
 }
 
+// Whether the reader or PDF page may read requestURL: the address in its url parameter, or one that address was redirected
+// to. The redirects seen in the last seconds are walked back from requestURL, each address once: following them blindly
+// went round a redirect loop forever (a website could cause one, and then main stopped with an error; security review B7).
 function isAccessAllowedFromContentPage (requestURL, contentPageURL) {
-  const contentPage = new URL(contentPageURL)
-  // If requestURL is the result of a redirect from an allowed URL, it should be allowed
-  const redirectEntry = redirectCache.find(entry => entry.to === requestURL)
-  return contentPage.searchParams.get('url') === requestURL || (redirectEntry && isAccessAllowedFromContentPage(redirectEntry.from, contentPageURL))
+  const allowed = new URL(contentPageURL).searchParams.get('url')
+  const seen = new Set([requestURL])
+  const next = [requestURL]
+  while (next.length > 0) {
+    const url = next.shift()
+    if (url === allowed) {
+      return true
+    }
+    redirectCache.forEach(function (entry) {
+      if (entry.to === url && !seen.has(entry.from)) {
+        seen.add(entry.from)
+        next.push(entry.from)
+      }
+    })
+  }
+  return false
 }
 
 let redirectCache = [] // {from to, expiry}
@@ -91,9 +106,11 @@ function listenForDownloadHeaders (ses) {
       if (typeHeader instanceof Array && typeHeader.filter(t => t.includes('application/pdf')).length > 0 && !attachment) {
       // open in PDF viewer instead
         callback({ cancel: false })
+        // the tab it's for: the UI used to find it by address, but a page's own navigation only changes the tab's
+        // address once the new page arrives (js/webviews.js), which a PDF never does
         sendIPCToWindow(sourceWindow, 'openPDF', {
           url: details.url,
-          tabId: null
+          tabId: (details.webContents && getTabIDFromWebContents(details.webContents)) || null
         })
         return
       }
@@ -112,6 +129,7 @@ function listenForDownloadHeaders (ses) {
 
       sendIPCToWindow(sourceWindow, 'set-file-view', {
         url: details.url,
+        tabId: (details.webContents && getTabIDFromWebContents(details.webContents)) || null,
         isFileView
       })
     }

@@ -13,7 +13,7 @@ Section 10.3 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
 
 **Flow:**
 
-1. The request is checked against `isPermissionBlockedForOrigin`, then `isPermissionGrantedForOrigin(origin, permission, details, ses)`.
+1. The request is checked against `isPermissionBlockedForOrigin`, then `isPermissionGrantedForOrigin(origin, permission, details, ses)`. The origin is the site in the address bar, also for a request from a frame inside it (since 2026-11-13, as in Chrome, which also needs the page to have let the frame ask: `<iframe allow="camera">`, checked by Chromium first). By the frame's own site, a site the user had allowed the camera got it without a prompt inside any other site's frame (`security-checks` B6), and the prompt named the frame's site.
 2. Otherwise it's pushed to `pendingPermissions` and `sendPermissionsToRenderers()` sends `updatePermissions`.
 3. The UI shows the bar and replies `permissionGranted` / `permissionDenied` with `{permissionId, persist | block, sourceId}`.
 4. Main calls the stored callback.

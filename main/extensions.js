@@ -596,6 +596,10 @@ function readExtensionCrx (data, options = {}) {
   }
   const manifest = parseExtensionManifest(manifestFile.data)
   checkExtensionManifestVersion(manifest)
+  // it becomes the extension's folder name (installCheckedExtension)
+  if (!isValidExtensionVersion(manifest.version)) {
+    throw new Error('The extension\'s version isn\'t valid: ' + String(manifest.version).slice(0, 40))
+  }
   if (manifest.minimum_chrome_version && compareExtensionVersions(manifest.minimum_chrome_version, process.versions.chrome) > 0) {
     throw new Error(l('extensionNeedsNewerBrowser').replace('%s', manifest.minimum_chrome_version))
   }
@@ -632,11 +636,24 @@ async function writeExtensionFiles (folder, files) {
 async function installCheckedExtension ({ crx, files, manifest, messages }, options = {}) {
   // with its developer key in the manifest, Electron gives the extension its Chrome Web Store id
   manifest.key = crx.publicKey.toString('base64')
-  const version = String(manifest.version || '0').replace(/[^\w.-]/g, '_')
-  const folder = path.join(extensionsDir, crx.id, version)
+  const folder = path.join(extensionsDir, crx.id, manifest.version)
+  // readExtensionCrx checked the version; this is the last line of defence for the rm and rename below
+  if (path.dirname(folder) !== path.join(extensionsDir, crx.id)) {
+    throw new Error('The extension\'s version isn\'t valid: ' + manifest.version)
+  }
   const temporary = folder + '.tmp'
   await fs.promises.rm(temporary, { recursive: true, force: true })
-  await writeExtensionFiles(temporary, files.map(file => file.path === 'manifest.json' ? { path: file.path, data: JSON.stringify(manifest, null, 2) } : file))
+  // The manifest the user reviewed goes in last, once every other file is written, and is read back. On Windows
+  // another entry of the zip can name the same file (MANIFEST.JSON, "manifest.json."), and written after it, it
+  // replaced the reviewed manifest, permissions and all (security review A3).
+  const manifestText = JSON.stringify(manifest, null, 2)
+  await fs.promises.mkdir(temporary, { recursive: true })
+  await writeExtensionFiles(temporary, files.filter(file => file.path !== 'manifest.json'))
+  await fs.promises.writeFile(path.join(temporary, 'manifest.json'), manifestText)
+  if ((await fs.promises.readFile(path.join(temporary, 'manifest.json'), 'utf8')) !== manifestText) {
+    await fs.promises.rm(temporary, { recursive: true, force: true })
+    throw new Error('The extension\'s files couldn\'t be written as checked')
+  }
   await unloadExtension(crx.id)
   await fs.promises.rm(folder, { recursive: true, force: true })
   await fs.promises.rename(temporary, folder)
@@ -1131,7 +1148,14 @@ function checkExtensionUpdates (options = {}) {
 async function updateExtension (id, answer, options) {
   const entry = getExtensionRegistry()[id]
   const checked = readExtensionCrx(await downloadForExtensions(answer.codebase, { sha256: answer.hashSha256 }), { id, webStore: options.webStore })
-  const increase = getExtensionPermissionIncrease(readInstalledExtensionManifest(entry) || {}, checked.manifest)
+  // as Chrome: an update is a newer version, never an older one (an older one may have a known flaw; security review B8).
+  // Compared with the installed manifest's version, as the update check is (checkExtensionUpdates)
+  const installedManifest = readInstalledExtensionManifest(entry) || {}
+  const installedVersion = installedManifest.version || entry.version
+  if (compareExtensionVersions(checked.manifest.version, installedVersion) <= 0) {
+    throw new Error('The update server offered version ' + checked.manifest.version + ', not newer than ' + installedVersion)
+  }
+  const increase = getExtensionPermissionIncrease(installedManifest, checked.manifest)
   if (increase) {
     if (!options.win) {
       if (!entry.pendingUpdate || entry.pendingUpdate.version !== checked.manifest.version) {
@@ -1602,7 +1626,7 @@ function reportExtensionTabFileView (contents) {
   contents.executeJavaScriptInIsolatedWorld(EXTENSION_FILE_VIEW_WORLD, [{ code: 'document.contentType' }]).then(function (type) {
     const win = !contents.isDestroyed() && (getWindowFromViewContents(contents) || windows.getCurrent())
     if (win && typeof type === 'string') {
-      sendIPCToWindow(win, 'set-file-view', { url: contents.getURL(), isFileView: !type.includes('text/html') })
+      sendIPCToWindow(win, 'set-file-view', { url: contents.getURL(), tabId: getTabIDFromWebContents(contents) || null, isFileView: !type.includes('text/html') })
     }
   }, function () {})
 }

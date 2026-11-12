@@ -138,6 +138,13 @@ function compareExtensionVersions (a, b) {
   return 0
 }
 
+// Whether a manifest's "version" is one Chrome accepts: one to four whole numbers from 0 to 65535, separated by dots.
+// Min also makes it the name of the extension's folder, so anything else is refused: ".." made that folder the
+// extensions folder itself, and installing deleted every other extension (security review A2).
+function isValidExtensionVersion (version) {
+  return typeof version === 'string' && /^\d{1,5}(\.\d{1,5}){0,3}$/.test(version) && version.split('.').every(part => Number(part) <= 65535)
+}
+
 // the address that answers whether these extensions ({id, version}) have updates; Chrome's update protocol (gupdate)
 function getExtensionUpdateCheckURL (updateURL, extensions, chromeVersion) {
   return updateURL + (updateURL.includes('?') ? '&' : '?') + 'response=updatecheck&acceptformat=crx3&prodversion=' + encodeURIComponent(chromeVersion) +
@@ -186,10 +193,12 @@ function parseExtensionUpdateResponse (xml) {
 const EXTENSION_MAX_UNPACKED_SIZE = 512 * 1024 * 1024
 const EXTENSION_MAX_ZIP_ENTRIES = 20000
 
-// a zip entry's name as a safe relative path, or null for a name that would escape the folder
+// a zip entry's name as a safe relative path, or null for a name that would escape the folder. Any colon is refused
+// (not only a drive letter's): on Windows "manifest.json::$DATA" names manifest.json itself, an NTFS data stream
+// (security review A3).
 function safeExtensionZipPath (name) {
   const parts = name.replace(/\\/g, '/').split('/').filter(part => part !== '' && part !== '.')
-  if (parts.length === 0 || parts.some(part => part === '..' || /^[a-zA-Z]:/.test(part)) || name.startsWith('/')) {
+  if (parts.length === 0 || parts.some(part => part === '..' || part.includes(':')) || name.startsWith('/')) {
     return null
   }
   return parts.join('/')
@@ -409,6 +418,7 @@ if (typeof module !== 'undefined') {
     extensionIdFromPublicKey,
     parseCrx,
     compareExtensionVersions,
+    isValidExtensionVersion,
     getExtensionUpdateCheckURL,
     getWebStoreDownloadURL,
     parseExtensionUpdateResponse,

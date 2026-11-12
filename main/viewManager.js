@@ -7,6 +7,10 @@ var temporaryPopupViews = {} // id: view
 // rate limit on "open in app" requests
 var globalLaunchRequests = 0
 
+function isInternalPageURL (url) {
+  return typeof url === 'string' && url.toLowerCase().startsWith('min:')
+}
+
 function getDefaultViewWebPreferences () {
   return (
     {
@@ -65,6 +69,11 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
       if (event === 'did-navigate-in-page' && args[1] === false) {
         return
       }
+      // whether the page itself started it (a link, a script), not Min (the address bar, a reload): the address bar
+      // only shows such a navigation's address once its page arrives (js/webviews.js, onNavigate)
+      if (event === 'did-start-navigation' || event === 'will-redirect') {
+        args = args.slice(0, 5).concat([!!(e && e.initiator)])
+      }
 
       const eventTarget = getWindowFromViewContents(view.webContents) || windows.getCurrent()
 
@@ -88,6 +97,12 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
 
   view.webContents.setWindowOpenHandler(function (details) {
     if (details.url && !filterPopups(details.url, view.webContents.session)) {
+      return {
+        action: 'deny'
+      }
+    }
+    // a website can't open Min's internal pages (see the navigation guard below)
+    if (isInternalPageURL(details.url) && !isInternalPageURL(view.webContents.getURL())) {
       return {
         action: 'deny'
       }
@@ -181,6 +196,11 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
       width: 400,
       height: 200
     }, function (result) {
+      // cancelled, or the window closed without an answer: no credentials
+      if (!result || typeof result !== 'object') {
+        callback()
+        return
+      }
       // resend request with auth credentials
       callback(result.username, result.password)
     })
@@ -213,6 +233,24 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
       }
     }
   }
+
+  /*
+  Min's internal pages (min://app/...) can change settings, install userscripts and manage extensions, and they read
+  their own address's parameters. A website could send its tab, a popup it opened or a frame to one of them with
+  parameters it chose (a javascript: address for the error page's "Try again", a local file for the userscript install
+  page). Only Min itself (the address bar, its own code) and the internal pages may go there. (AGENTS.md section 15,
+  security review A1; suite security-checks)
+  */
+  view.webContents.on('will-frame-navigate', function (event) {
+    if (isInternalPageURL(event.url) && !(event.initiator && isInternalPageURL(event.initiator.url))) {
+      event.preventDefault()
+    }
+  })
+  view.webContents.on('will-redirect', function (event) {
+    if (isInternalPageURL(event.url)) {
+      event.preventDefault()
+    }
+  })
 
   view.webContents.on('did-start-navigation', handleExternalProtocol)
   /*

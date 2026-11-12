@@ -1,7 +1,5 @@
 const test = require('node:test')
 const assert = require('node:assert')
-const crypto = require('crypto')
-const zlib = require('zlib')
 
 const {
   EXTENSION_WEBSTORE_KEY_HASH,
@@ -9,6 +7,7 @@ const {
   extensionIdFromPublicKey,
   parseCrx,
   compareExtensionVersions,
+  isValidExtensionVersion,
   getExtensionUpdateCheckURL,
   getWebStoreDownloadURL,
   parseExtensionUpdateResponse,
@@ -22,79 +21,7 @@ const {
   extensionUsesNetworkFiltering
 } = require('../js/util/extensionPackages.js')
 
-// a zip with the given {name: content} files; deflated unless the name ends in ".stored"
-function makeZip (files) {
-  const locals = []
-  const centrals = []
-  let offset = 0
-  for (const [name, content] of Object.entries(files)) {
-    const data = Buffer.from(content)
-    const stored = name.endsWith('.stored')
-    const body = stored ? data : zlib.deflateRawSync(data)
-    const nameBytes = Buffer.from(name)
-    const local = Buffer.alloc(30)
-    local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(stored ? 0 : 8, 8)
-    local.writeUInt32LE(body.length, 18)
-    local.writeUInt32LE(data.length, 22)
-    local.writeUInt16LE(nameBytes.length, 26)
-    const central = Buffer.alloc(46)
-    central.writeUInt32LE(0x02014b50, 0)
-    central.writeUInt16LE(stored ? 0 : 8, 10)
-    central.writeUInt32LE(body.length, 20)
-    central.writeUInt32LE(data.length, 24)
-    central.writeUInt16LE(nameBytes.length, 28)
-    central.writeUInt32LE(offset, 42)
-    locals.push(local, nameBytes, body)
-    centrals.push(central, nameBytes)
-    offset += 30 + nameBytes.length + body.length
-  }
-  const centralData = Buffer.concat(centrals)
-  const endRecord = Buffer.alloc(22)
-  endRecord.writeUInt32LE(0x06054b50, 0)
-  endRecord.writeUInt16LE(Object.keys(files).length, 8)
-  endRecord.writeUInt16LE(Object.keys(files).length, 10)
-  endRecord.writeUInt32LE(centralData.length, 12)
-  endRecord.writeUInt32LE(offset, 16)
-  return Buffer.concat([...locals, centralData, endRecord])
-}
-
-function protobufField (field, bytes) {
-  const tag = field * 8 + 2
-  const varint = n => { const out = []; while (n > 127) { out.push((n & 127) | 128); n = Math.floor(n / 128) } out.push(n); return Buffer.from(out) }
-  return Buffer.concat([varint(tag), varint(bytes.length), bytes])
-}
-
-// a CRX3 file signed with a new RSA key; returns {crx, id}. options.extraKey adds an ECDSA signature from another key
-// (as the Web Store adds its own), options.badExtraSignature makes that one invalid.
-function makeCrx (zip, options = {}) {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
-  const publicDer = publicKey.export({ type: 'spki', format: 'der' })
-  const crxId = crypto.createHash('sha256').update(publicDer).digest().subarray(0, 16)
-  const signedHeaderData = protobufField(1, crxId)
-  const lengthBytes = Buffer.alloc(4)
-  lengthBytes.writeUInt32LE(signedHeaderData.length)
-  const signedContent = Buffer.concat([Buffer.from('CRX3 SignedData\x00', 'latin1'), lengthBytes, signedHeaderData, zip])
-  const signature = crypto.sign('sha256', signedContent, privateKey)
-  const proofs = [protobufField(2, Buffer.concat([protobufField(1, publicDer), protobufField(2, signature)]))]
-  let extraKeyHash = null
-  if (options.extraKey) {
-    const extra = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-    const extraDer = extra.publicKey.export({ type: 'spki', format: 'der' })
-    const extraSignature = crypto.sign('sha256', options.badExtraSignature ? Buffer.from('something else') : signedContent, extra.privateKey)
-    proofs.push(protobufField(3, Buffer.concat([protobufField(1, extraDer), protobufField(2, extraSignature)])))
-    extraKeyHash = crypto.createHash('sha256').update(extraDer).digest('hex')
-  }
-  const header = Buffer.concat([
-    ...proofs,
-    protobufField(10000, signedHeaderData)
-  ])
-  const prefix = Buffer.alloc(12)
-  prefix.write('Cr24', 0, 'latin1')
-  prefix.writeUInt32LE(3, 4)
-  prefix.writeUInt32LE(header.length, 8)
-  return { crx: Buffer.concat([prefix, header, options.replaceZip || zip]), id: extensionIdFromPublicKey(publicDer), publicDer, extraKeyHash }
-}
+const { makeZip, makeCrx, protobufField } = require('./e2e/make-crx.js')
 
 test('protobuf: varints and length-delimited fields', function () {
   const fields = readExtensionProtobuf(Buffer.concat([Buffer.from([0x08, 0x96, 0x01]), protobufField(2, Buffer.from('hi'))]))
@@ -133,6 +60,15 @@ test('versions: numeric parts, missing parts are 0', function () {
   assert.strictEqual(compareExtensionVersions('4.9.10', '4.9.100'), -1)
   assert.strictEqual(compareExtensionVersions('2026.10.1', '2026.10.1.0'), 0)
   assert.strictEqual(compareExtensionVersions('1.10', '1.9.9'), 1)
+})
+
+test('versions: only what Chrome accepts (it becomes a folder name)', function () {
+  for (const version of ['1', '1.0', '4.9.134', '2026.10.1.0', '0.0.1', '65535.0']) {
+    assert.strictEqual(isValidExtensionVersion(version), true, version)
+  }
+  for (const version of ['..', '.', '', '1.', '.1', '1..2', '1.2.3.4.5', '65536', '1.0-beta', '1/2', '1 ', 1, null, undefined]) {
+    assert.strictEqual(isValidExtensionVersion(version), false, String(version))
+  }
 })
 
 test('updates: check and download addresses', function () {
@@ -194,6 +130,9 @@ test('zip: names that escape the folder are refused', function () {
   assert.strictEqual(safeExtensionZipPath('/abs.js'), null)
   assert.strictEqual(safeExtensionZipPath('C:/Windows/evil.js'), null)
   assert.strictEqual(safeExtensionZipPath('a\\..\\evil.js'), null)
+  // on Windows these name manifest.json itself (an NTFS data stream)
+  assert.strictEqual(safeExtensionZipPath('manifest.json::$DATA'), null)
+  assert.strictEqual(safeExtensionZipPath('js/a.js:stream'), null)
   assert.throws(() => readExtensionZip(makeZip({ '../evil.js': 'x' })), /unsafe file name/)
   assert.throws(() => readExtensionZip(Buffer.from('not a zip at all, definitely not')), /no end record/)
 })

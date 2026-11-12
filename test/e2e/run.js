@@ -33,6 +33,7 @@ const REGRESSION = [
   'performance-settings',
   'covered-window',
   'session-restore',
+  'security-checks',
   'electron-workarounds'
 ]
 const packaged = process.env.MIN_TEST_PACKAGED === '1'
