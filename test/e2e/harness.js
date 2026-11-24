@@ -126,7 +126,8 @@ function removeFolder (folder) {
 
 // stopOnMainErrors: false keeps going after a main-process error (the run records them itself, like the extension survey)
 // adblockEngine: false starts with no ad-block engine, as a new user's first start does (adblock-first-start)
-module.exports = function harness ({ name, minutes = 8, settings = {}, extensions = [], stopOnMainErrors = true, adblockEngine = true }) {
+// keepEngine: false for a suite that writes an engine of its own into the profile, which mustn't become the next runs'
+module.exports = function harness ({ name, minutes = 8, settings = {}, extensions = [], stopOnMainErrors = true, adblockEngine = true, keepEngine = true }) {
   restorePatchedFiles()
   process.on('exit', restorePatchedFiles)
   // run folders left by a run that was killed (one run at a time, so none of them is in use)
@@ -160,6 +161,12 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
   }
   if (adblockEngine && fs.existsSync(cachedEngine)) {
     fs.copyFileSync(cachedEngine, path.join(profileDir, 'adblocker-engine-v2.bin'))
+  }
+  // the lists' pop-up and tracking-parameter rules, saved with the engine since 2026-11-17 (main/filtering.js); without
+  // them Min downloads the lists a minute after starting
+  const cachedExtraRules = path.join(CACHE, 'adblocker-extra-rules.txt')
+  if (adblockEngine && fs.existsSync(cachedEngine) && fs.existsSync(cachedExtraRules)) {
+    fs.copyFileSync(cachedExtraRules, path.join(profileDir, 'adblocker-extra-rules.txt'))
   }
 
   const results = []
@@ -201,12 +208,18 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
     }
     fs.writeFileSync(outFile, JSON.stringify({ suite: name, packaged, date: new Date().toISOString(), passed, total: results.length, stoppedEarly: stopReason || null, screenLocked: screenLockedAtStart || isScreenLocked(), display, results }, null, 2))
     fs.writeFileSync(logFile, childLog)
-    // keep the newest ad-block engine for the next run
+    // keep the newest ad-block engine (and its pop-up rules) for the next run, unless the suite made its own
+    // (keepEngine: false; measure-adguard-testcases' small test engines were kept until 2026-11-17, so later runs had a
+    // test list instead of Min's lists)
     const engine = path.join(profileDir, 'adblocker-engine-v2.bin')
     try {
-      if (fs.existsSync(engine) && (!fs.existsSync(cachedEngine) || fs.statSync(engine).mtimeMs > fs.statSync(cachedEngine).mtimeMs)) {
+      if (keepEngine && fs.existsSync(engine) && (!fs.existsSync(cachedEngine) || fs.statSync(engine).mtimeMs > fs.statSync(cachedEngine).mtimeMs)) {
         fs.mkdirSync(CACHE, { recursive: true })
         fs.copyFileSync(engine, cachedEngine)
+        const extraRules = path.join(profileDir, 'adblocker-extra-rules.txt')
+        if (fs.existsSync(extraRules)) {
+          fs.copyFileSync(extraRules, cachedExtraRules)
+        }
       }
     } catch (e) {}
     if (process.env.MIN_TEST_KEEP_PROFILE === '1') {
@@ -269,14 +282,16 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
 
   // Starts Min on a URL in this run's profile, connects to its main process (Node inspector) and sets up the helpers
   // the suites use there: native dialogs answer "yes" and are recorded, native menus are recorded instead of shown.
-  async function launch (url, { args = [] } = {}) {
+  // app: another Electron app to start instead of Min, as a folder relative to the repository (the bare app web-platform-
+  // tests compare Min with: test/e2e/wpt-baseline); the rest (main's error capture, the watchdog) works the same
+  async function launch (url, { args = [], app = '.' } = {}) {
     await prepared
     const common = ['--inspect=' + INSPECT_PORT, '--remote-debugging-port=' + CDP_PORT, '--user-data-dir=' + userDataDir, ...args]
-    if (packaged) {
+    if (packaged && app === '.') {
       const folder = path.join(root, 'dist/app/win-unpacked')
       child = spawn(path.join(folder, 'Min.exe'), [...common, '--development-mode', url], { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'] })
     } else {
-      child = spawn(path.join(root, 'node_modules/electron/dist/electron.exe'), [...common, '.', '--development-mode', url], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
+      child = spawn(path.join(root, 'node_modules/electron/dist/electron.exe'), [...common, app, '--development-mode', url], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
     }
     const keepLog = data => { childLog = (childLog + data).slice(-500000) }
     child.stdout.on('data', keepLog)
@@ -289,8 +304,8 @@ module.exports = function harness ({ name, minutes = 8, settings = {}, extension
     const main = connect(inspector.webSocketDebuggerUrl)
     await main.evaluate("global.__mainErrors = []; process.on('uncaughtException', e => global.__mainErrors.push(String(e && e.stack || e))); 1")
     watched = { main, child }
-    // the UI's target appears before its page has loaded: wait until its scripts have run
-    const uiPage = await target(t => t.url.startsWith('min://app/index.html'))
+    // the UI's target appears before its page has loaded: wait until its scripts have run (Min only)
+    const uiPage = app === '.' ? await target(t => t.url.startsWith('min://app/index.html')) : null
     if (uiPage) {
       await waitFor(async () => (await uiPage.evaluate("document.readyState === 'complete' && typeof tabs === 'object' && !!document.getElementById('extension-actions')")) === true)
       uiPage.close()

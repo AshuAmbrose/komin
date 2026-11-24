@@ -13,6 +13,7 @@ const fs = require('fs')
 const REGRESSION = [
   'adblock-first-start',
   'adblock-cosmetic',
+  'adblock-network',
   'extensions-core',
   'extensions-webstore',
   'extensions-toolbar',
@@ -34,6 +35,10 @@ const REGRESSION = [
   'covered-window',
   'session-restore',
   'security-checks',
+  'internal-pages',
+  'permissions',
+  'popups',
+  'popups-real',
   'electron-workarounds'
 ]
 const packaged = process.env.MIN_TEST_PACKAGED === '1'

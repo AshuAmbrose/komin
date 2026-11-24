@@ -69,7 +69,11 @@ const EXTENSIONS = {
 }
 const onlyIds = process.argv.slice(2).filter(arg => !arg.startsWith('--'))
 const SCAN_ONLY = process.argv.includes('--scan')
-const t = require('./harness')({ name: 'measure-extension-survey', minutes: 120, stopOnMainErrors: false })
+// a run of some extensions, or with MIN_TEST_OLD switches (old-behaviour.js: noExtensionPermissionChecks to tell whether
+// Min's permission checks are behind an extension's trouble), has result files of its own: the full survey's stay
+const runName = 'measure-extension-survey' + (onlyIds.length && !SCAN_ONLY ? '-some' : '') + (process.env.MIN_TEST_OLD ? '-old' : '')
+const t = require('./harness')({ name: runName, minutes: 120, stopOnMainErrors: false })
+const switchedOff = require('./old-behaviour')(t)
 const { sleep, check, finish, waitFor, target, launch, quit, ui } = t
 const packages = require(path.join(t.root, 'js/util/extensionPackages.js'))
 
@@ -244,6 +248,7 @@ const LOGGER = `(event, ...rest) => keep('page:' + (wc.isDestroyed() ? '' : wc.g
     return finish()
   }
   const report = {}
+  if (switchedOff.length) check('switched back to the old behaviour (info)', true, switchedOff)
   const save = () => fs.writeFileSync(t.output('runtime.json'), JSON.stringify(report, null, 2))
   try {
     main = await launch(SURVEY_PAGE)
@@ -278,7 +283,15 @@ const LOGGER = `(event, ...rest) => keep('page:' + (wc.isDestroyed() ? '' : wc.g
       await main.evaluate('global.__logs = []; global.__mainErrors = []; global.__dialogs = []; 1')
       await u.evaluate('window.__opened = []; 1')
       await main.evaluate(`global.__nextOpen = ${JSON.stringify(t.crx(id))}; 1`)
-      const installed = await Promise.race([s.evaluate("extensionPages.request('install-crx').catch(e => 'ERROR ' + e.message)"), sleep(60000).then(() => 'TIMEOUT')])
+      const installStart = Date.now()
+      const installing = s.evaluate("extensionPages.request('install-crx').catch(e => 'ERROR ' + e.message)")
+      let installed = await Promise.race([installing, sleep(60000).then(() => 'TIMEOUT')])
+      // slow or stuck? (Wappalyzer's 13,346 files timed out once in the full survey, 2026-11-14)
+      if (installed === 'TIMEOUT') {
+        installed = await Promise.race([installing, sleep(180000).then(() => 'TIMEOUT')])
+        entry.installedAfterTimeout = installed === id
+      }
+      entry.installMs = Date.now() - installStart
       entry.installed = installed === id ? true : installed
       if (installed !== id) { save(); continue }
       await sleep(5000)
