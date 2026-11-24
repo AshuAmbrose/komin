@@ -213,7 +213,9 @@ const webviews = {
     // if the tab is private, we want to partition it. See http://electron.atom.io/docs/v0.34.0/api/web-view-tag/#partition
     // since tab IDs are unique, we can use them as partition names
     if (tabData.private === true) {
-      var partition = tabId.toString() // options.tabId is a number, which remote.session.fromPartition won't accept. It must be converted to a string first
+      // options.tabId is a number, which remote.session.fromPartition won't accept. It must be converted to a string first.
+      // A private popup keeps its opener's session (tabData.partition, browserUI.js)
+      var partition = tabData.partition || tabId.toString()
     }
 
     ipc.send('createView', {

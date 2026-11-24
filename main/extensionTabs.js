@@ -198,7 +198,7 @@ function syncExtensionTabs () {
     }
     listed.add(entry.id)
     const view = viewMap[entry.id]
-    if (view && !view.webContents.isDestroyed() && store.tabs.has(view.webContents)) {
+    if (view && view.webContents && !view.webContents.isDestroyed() && store.tabs.has(view.webContents)) {
       ordered.push([view.webContents, win])
       return
     }

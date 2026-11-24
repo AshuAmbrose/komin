@@ -31,6 +31,11 @@ class TabList {
       hasWebContents: false,
     }
 
+    // a private popup's session is its opener's (browserUI.js, did-create-popup); other tabs have none
+    if (tab.partition) {
+      newTab.partition = tab.partition
+    }
+
     if (options.atEnd) {
       this.tabs.push(newTab)
     } else {

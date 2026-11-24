@@ -96,7 +96,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
   })
 
   view.webContents.setWindowOpenHandler(function (details) {
-    if (details.url && !filterPopups(details.url, view.webContents.session)) {
+    if (details.url && !filterPopups(details.url, view.webContents.session, view.webContents.getURL())) {
       return {
         action: 'deny'
       }
@@ -109,27 +109,17 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
     }
 
     /*
-      Opening a popup with window.open() generally requires features to be set
-      So if there are no features, the event is most likely from clicking on a link, which should open a new tab.
-      Clicking a link can still have a "new-window" or "foreground-tab" disposition depending on which keys are pressed
-      when it is clicked.
-      (https://github.com/minbrowser/min/issues/1835)
+      Every window.open() and every link that opens a new tab gets Chromium's window, shown as a tab (did-create-popup), so
+      the page keeps its handle and the new page its opener, as in Chrome; Ctrl+click and middle-click
+      (disposition "background-tab") open it in the background. Until 2026-11-17 an open without features was taken for a
+      link click (upstream issue #1835): Min opened the tab itself (new-tab) and the page got null, which web-platform-tests
+      showed in 102 tests (section 10.1). A link opened without an opener (target="_blank") has none here either.
     */
-    if (details.url && details.url !== 'about:blank' && !details.features) {
-      const eventTarget = getWindowFromViewContents(view.webContents) || windows.getCurrent()
-
-      getWindowWebContents(eventTarget).send('view-event', {
-        tabId: id,
-        event: 'new-tab',
-        args: [details.url, !(details.disposition === 'background-tab')]
-      })
-      return {
-        action: 'deny'
-      }
-    }
-
     return {
       action: 'allow',
+      // the new tab stays when the page that opened it closes, as in Chrome: Electron closes a page's windows with it by
+      // default, which left Min's tab empty and broke code that walks its tabs (2026-11-24; suite popups)
+      outlivesOpener: true,
       createWindow: function (options) {
         const view = new WebContentsView({ webPreferences: getDefaultViewWebPreferences(), webContents: options.webContents })
 
@@ -141,7 +131,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
         getWindowWebContents(eventTarget).send('view-event', {
           tabId: id,
           event: 'did-create-popup',
-          args: [popupId, details.url]
+          args: [popupId, details.url, details.disposition || '']
         })
 
         return view.webContents
@@ -310,9 +300,12 @@ function destroyView (id) {
     }
   })
   if (typeof extensionsTabDestroyed === 'function') {
-    extensionsTabDestroyed(viewMap[id].webContents)
+    if (viewMap[id].webContents) extensionsTabDestroyed(viewMap[id].webContents)
   }
-  viewMap[id].webContents.destroy()
+  // the page may be gone already (a view without webContents), and the tab must still close
+  if (viewMap[id].webContents && !viewMap[id].webContents.isDestroyed()) {
+    viewMap[id].webContents.destroy()
+  }
 
   delete viewMap[id]
   delete viewStateMap[id]

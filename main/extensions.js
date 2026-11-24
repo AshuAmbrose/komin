@@ -355,7 +355,7 @@ app.whenReady().then(function () {
 
 function extensionsTabCreated (view) {
   const contents = view.webContents
-  if (!chromeExtensions || contents.isDestroyed() || contents.session !== extensionSession || chromeExtensions.ctx.store.tabs.has(contents)) {
+  if (!chromeExtensions || !contents || contents.isDestroyed() || contents.session !== extensionSession || chromeExtensions.ctx.store.tabs.has(contents)) {
     return
   }
   // the library makes every tab it's given the active one (and asks Min to switch to it), but Min opens tabs in the
@@ -803,7 +803,8 @@ function getExtensionManagementList () {
 
 function notifyExtensionPages () {
   Object.values(viewMap).forEach(function (view) {
-    if (!view.webContents.isDestroyed() && view.webContents.getURL().startsWith('min://app/pages/settings/')) {
+    // a view whose page Electron destroyed has no webContents at all (2026-11-24: a popup closed with its opener)
+    if (view.webContents && !view.webContents.isDestroyed() && view.webContents.getURL().startsWith('min://app/pages/settings/')) {
       view.webContents.send('extensions-page-changed')
     }
   })
@@ -945,7 +946,7 @@ function getWebStoreExtensionInfo (id) {
 // tells open store pages, so the "Add to Chrome" / "Remove from Chrome" button follows changes made anywhere
 function notifyWebStorePages (name, data) {
   Object.values(viewMap).forEach(function (view) {
-    if (!view.webContents.isDestroyed() && view.webContents.getURL().startsWith(WEBSTORE_ORIGIN + '/')) {
+    if (view.webContents && !view.webContents.isDestroyed() && view.webContents.getURL().startsWith(WEBSTORE_ORIGIN + '/')) {
       view.webContents.send('extensions-webstore-event', name, data)
     }
   })
