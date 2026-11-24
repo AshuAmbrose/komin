@@ -13,6 +13,7 @@ const modules = [
   'js/util/settings/settingsMain.js',
   'main/main.js',
   'main/minInternalProtocol.js',
+  'js/util/adblockExtraRules.js',
   'main/filtering.js',
   'main/viewManager.js',
   'main/download.js',

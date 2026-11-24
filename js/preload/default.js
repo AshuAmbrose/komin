@@ -1,22 +1,96 @@
 /* imports common modules */
-/* global ghosteryContent, MutationObserver */
+/* global ghosteryContent, loadGhosteryExtendedSelectors, MutationObserver */
 
 var electron = require('electron')
 var ipc = electron.ipcRenderer
 
 // This frame's one request to main as it starts (main/userscripts.js, page-start), sent synchronously so that what it
-// brings runs before the page's own scripts: {cosmetics: the ad blocker's part (only for a tab's top frame), userscripts:
-// this frame's userscripts, which js/preload/userscripts.js runs}
+// brings runs before the page's own scripts: {cosmetics: the ad blocker's part (a tab's top frame, and since 2026-11-17
+// the frames inside its page), userscripts: this frame's userscripts, which js/preload/userscripts.js runs}
 var minPageStart = null
 if (window.location.protocol === 'http:' || window.location.protocol === 'https:' || window.location.protocol === 'file:') {
   minPageStart = ipc.sendSync('page-start', window.location.href)
 }
 
 // Ad blocking (main/filtering.js): the scriptlets run now, before the page's own scripts, as in uBlock Origin. Several only
-// work if they're there first (YouTube's ad data in ytInitialPlayerResponse). Main inserts the hiding CSS itself.
+// work if they're there first (YouTube's ad data in ytInitialPlayerResponse). Main inserts a top frame's hiding CSS
+// itself; a frame inside the page gets it in the answer (styles), and later generic rules as cosmetic-filters-css, and
+// inserts them here: main's insertCSS only reaches a tab's top frame
 var minCosmetics = minPageStart && minPageStart.cosmetics
+if (minCosmetics && minCosmetics.styles) {
+  electron.webFrame.insertCSS(minCosmetics.styles, { cssOrigin: 'user' })
+}
 if (minCosmetics && minCosmetics.scriptlets) {
   electron.webFrame.executeJavaScript(minCosmetics.scriptlets)
+}
+ipc.on('cosmetic-filters-css', function (e, css) {
+  if (typeof css === 'string' && css.length > 0) {
+    electron.webFrame.insertCSS(css, { cssOrigin: 'user' })
+  }
+})
+if (minCosmetics && Array.isArray(minCosmetics.extended) && minCosmetics.extended.length > 0) {
+  applyExtendedRules(minCosmetics.extended)
+}
+
+/* Procedural hiding rules (main/filtering.js, since 2026-11-17): uBlock Origin's :has-text(), :upward(), :remove() and the
+   like, which CSS can't express. The engine sends each as a parsed selector; Ghostery's evaluator
+   (@ghostery/adblocker-extended-selectors, loadGhosteryExtendedSelectors from scripts/buildPreload.js, only loaded on a page
+   that has such rules) finds the elements. Each gets the rule's attribute, which the CSS main inserted hides, or the rule's
+   directive (removed, an attribute or class removed). Again when the page changes, at most every half second, and not
+   while it's hidden. */
+function applyExtendedRules (rules) {
+  var selectors = loadGhosteryExtendedSelectors()
+  var run = function () {
+    rules.forEach(function (rule) {
+      var elements
+      try {
+        elements = selectors.querySelectorAll(document.documentElement, rule.ast)
+      } catch (e) {
+        return
+      }
+      elements.forEach(function (element) {
+        if (rule.directive) {
+          try {
+            selectors.handlePseudoDirective(element, rule.directive)
+          } catch (e) {}
+        } else if (rule.attribute && !element.hasAttribute(rule.attribute)) {
+          element.setAttribute(rule.attribute, '')
+        }
+      })
+    })
+  }
+  var scheduled = false
+  var schedule = function () {
+    if (scheduled) {
+      return
+    }
+    scheduled = true
+    setTimeout(function () {
+      scheduled = false
+      if (!document.hidden) {
+        run()
+      }
+    }, 500)
+  }
+  var start = function () {
+    if (!document.documentElement) {
+      return
+    }
+    if (!document.hidden) {
+      run()
+    }
+    new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, characterData: true })
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) {
+        schedule()
+      }
+    })
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start)
+  } else {
+    start()
+  }
 }
 if (minCosmetics && minCosmetics.dom) {
   reportCosmeticFeatures(minCosmetics.whileLoading === true)

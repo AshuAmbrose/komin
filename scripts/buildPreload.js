@@ -25,9 +25,18 @@ function ghosteryContentScript () {
   return 'var ghosteryContent = (function () {\nvar exports = {}\nvar module = { exports: exports }\n' + code + '\nreturn module.exports\n})();\n'
 }
 
+/* Ghostery's evaluator for procedural hiding rules (@ghostery/adblocker-extended-selectors, Mozilla Public License 2.0):
+   its standalone build, unchanged, inside a function the preload only calls on a page that has such rules
+   (applyExtendedRules in js/preload/default.js), so other pages don't compile it. */
+function ghosteryExtendedSelectorsScript () {
+  const folder = path.dirname(require.resolve('@ghostery/adblocker-extended-selectors/package.json'))
+  const code = fs.readFileSync(path.join(folder, 'dist/adblocker.umd.min.js'), 'utf-8').replace(/\/\/# sourceMappingURL=.*$/m, '')
+  return 'function loadGhosteryExtendedSelectors () {\nif (!loadGhosteryExtendedSelectors.loaded) {\nvar exports = {}\nvar module = { exports: exports }\n' + code + '\nloadGhosteryExtendedSelectors.loaded = module.exports\n}\nreturn loadGhosteryExtendedSelectors.loaded\n}\n'
+}
+
 function buildPreload() {
   /* concatenate modules */
-  let output = ghosteryContentScript()
+  let output = ghosteryContentScript() + ghosteryExtendedSelectorsScript()
   modules.forEach(function (script) {
     output += fs.readFileSync(path.resolve(__dirname, '../', script)) + ';\n'
   })

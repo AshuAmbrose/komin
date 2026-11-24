@@ -10,10 +10,16 @@
 //     links (##a[href^="https://ad.doubleclick.net/"]); a page still arriving (its first part drawn, the rest 1.5 s later)
 //     gets them once it's parsed by default, and before that with the setting hideAdSpacesWhileLoading on; a tab in the
 //     background reports nothing until it's shown;
-//   - none of it on a site whose blocking is off (the shield button's exceptionDomains).
+//   - frames inside a page (since 2026-11-17; until then only a tab's top frame got any): a frame from edition.cnn.com
+//     inside a news.example.org page gets CNN's rule and scriptlet and the generic rules, also on an element it adds later;
+//   - procedural rules (since 2026-11-17): uBlock Origin's medievalists.net##.widget-title:has-text(Adv) hides the heading
+//     that says "Advertisement", also one the page adds later, and not the others (Ghostery's evaluator in the page);
+//   - none of it on a site whose blocking is off (the shield button's exceptionDomains), nor in frames inside it.
 const http = require('http')
-const t = require('./harness')({ name: 'adblock-cosmetic', minutes: 6 })
+const t = require('./harness')({ name: 'adblock-cosmetic' + (process.env.MIN_TEST_OLD ? '-old' : ''), minutes: 6 })
 const { PAGE, sleep, check, finish, list, connect, waitFor, launch, quit, ui } = t
+// MIN_TEST_OLD (old-behaviour.js), for example noFrameHiding, switches a change back for a comparison
+const switchedOff = require('./old-behaviour')(t)
 const PORT = 8783
 const page = `<!doctype html><title>cosmetic test</title><body>
 <div class="ad-slot-header__wrapper" style="height: 100px">CNN's header ad wrapper</div>
@@ -70,6 +76,15 @@ const slowFirstPart = `<!doctype html><title>slow page</title><body>
 `
 http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+  if (req.url.startsWith('/procedural')) {
+    res.end(`<!doctype html><title>procedural</title><h3 class="widget-title" id="adv">Advertisement</h3><h3 class="widget-title" id="posts">Recent posts</h3>
+<script>setTimeout(function () { const h = document.createElement('h3'); h.className = 'widget-title'; h.id = 'late-adv'; h.textContent = 'Adverts'; document.body.appendChild(h) }, 1500)</script>`)
+    return
+  }
+  if (req.url.startsWith('/withframe')) {
+    res.end(`<!doctype html><title>a page with a frame</title><p>the page</p><iframe src="http://edition.cnn.com:${PORT}/inframe" style="width: 900px; height: 700px"></iframe>`)
+    return
+  }
   if (req.url === '/slow') {
     res.write(slowFirstPart)
     setTimeout(() => res.end('<p>the rest of the page</p></body>'), 1500)
@@ -98,13 +113,38 @@ async function visit (u, url) {
   return state
 }
 
+// the same in a frame from another site inside a page (its own process, so its own DevTools target)
+async function visitFrame (u, url, frameURL) {
+  const blank = PAGE + '?visit-' + Math.random().toString(36).slice(2)
+  await u.evaluate(`ipc.emit('addTab', {}, { url: ${JSON.stringify(blank)} }); 1`)
+  const target = await waitFor(async () => (await list()).find(x => x.type === 'page' && x.url === blank), 15000)
+  const c = connect(target.webSocketDebuggerUrl)
+  // this tab's frame, not one left in an earlier tab
+  const before = new Set((await list()).map(x => x.id))
+  await c.send('Page.navigate', { url })
+  const frameTarget = await waitFor(async () => (await list()).find(x => x.type === 'iframe' && x.url === frameURL && !before.has(x.id)), 15000)
+  if (!frameTarget) {
+    c.close()
+    return { error: 'no frame target' }
+  }
+  const f = connect(frameTarget.webSocketDebuggerUrl)
+  await waitFor(async () => (await f.evaluate('document.readyState')) === 'complete', 15000)
+  await sleep(4000)
+  const state = await f.evaluate(STATE)
+  state.url = await f.evaluate('location.href')
+  f.close()
+  c.close()
+  return state
+}
+
 ;(async () => {
   try {
     // hidden pages aren't watched, and Chromium counts every page as hidden while Min's window is covered or the display is
     // off (an idle computer): its occlusion check is off for this run. A tab in the background is still hidden without it.
-    const main = await launch(PAGE, { args: ['--host-resolver-rules=MAP edition.cnn.com 127.0.0.1, MAP www.cnn.com 127.0.0.1, MAP news.example.org 127.0.0.1', '--disable-features=CalculateNativeWinOcclusion'] })
+    const main = await launch(PAGE, { args: ['--host-resolver-rules=MAP edition.cnn.com 127.0.0.1, MAP www.cnn.com 127.0.0.1, MAP news.example.org 127.0.0.1, MAP medievalists.net 127.0.0.1', '--disable-features=CalculateNativeWinOcclusion'] })
     const u = await ui()
     await sleep(1500)
+    if (switchedOff.length) check('switched back to the old behaviour (info)', true, switchedOff)
 
     const www = await visit(u, `http://www.cnn.com:${PORT}/`)
     check('www.cnn.com: CNN\'s hiding rule and scriptlet apply', www.url.startsWith('http://www.cnn.com') && www.headerWrapper === 'none' && www.faveClipsAtStart === false, www)
@@ -155,11 +195,35 @@ async function visit (u, url) {
     check('background tab: what the page had at first is hidden, what it added later isn\'t looked at while hidden', whileHidden.visibility === 'hidden' && whileHidden.adSlot === 'none' && whileHidden.lateAdSlot === 'block', whileHidden)
     check('background tab, once shown: the later element is hidden too', shown.visibility === 'visible' && shown.lateAdSlot === 'none', shown)
 
+    // procedural rules: a heading by its text, also one added later, and not the others
+    {
+      const blank = PAGE + '?visit-' + Math.random().toString(36).slice(2)
+      await u.evaluate(`ipc.emit('addTab', {}, { url: ${JSON.stringify(blank)} }); 1`)
+      const procTarget = await waitFor(async () => (await list()).find(x => x.type === 'page' && x.url === blank), 15000)
+      const c = connect(procTarget.webSocketDebuggerUrl)
+      await c.send('Page.navigate', { url: `http://medievalists.net:${PORT}/procedural` })
+      await waitFor(async () => (await c.evaluate('document.readyState')) === 'complete', 15000)
+      await sleep(3500)
+      const procedural = await c.evaluate("(() => { const d = id => { const el = document.getElementById(id); return el ? getComputedStyle(el).display : 'missing' }; return { adv: d('adv'), posts: d('posts'), lateAdv: d('late-adv'), url: location.href } })()")
+      c.close()
+      check('procedural rule (:has-text): the heading that says "Advertisement" is hidden, the others aren\'t', procedural.adv === 'none' && procedural.posts === 'block', procedural)
+      check('procedural rule: a heading the page adds later is hidden too', procedural.lateAdv === 'none', procedural)
+    }
+
+    // a frame from another site inside a page: its own site's rules and scriptlet, and the generic rules
+    const frameURL = `http://edition.cnn.com:${PORT}/inframe`
+    const framed = await visitFrame(u, `http://news.example.org:${PORT}/withframe`, frameURL)
+    check('a frame inside a page: its own site\'s rule and scriptlet apply (CNN\'s, in a frame from edition.cnn.com)', framed.headerWrapper === 'none' && framed.faveClipsAtStart === false, framed)
+    check('a frame inside a page: generic rules hide its elements, also one it adds later', framed.adSlot === 'none' && framed.lateAdSlot === 'none' && framed.adLink === 'none', framed)
+    check('a frame inside a page: real content stays visible', framed.content === 'block', framed)
+
     // the shield button: blocking off for that site, so nothing hidden there
     await u.evaluate('ipc.send("settingChanged", "filtering", ' + JSON.stringify({ blockingLevel: 1, contentTypes: [], exceptionDomains: ['news.example.org'] }) + '); 1')
     await sleep(1000)
     const excepted = await visit(u, `http://news.example.org:${PORT}/excepted`)
     check('blocking off for the site: nothing hidden', excepted.adSlot === 'block' && excepted.lateAdSlot === 'block' && excepted.adLink === 'block', excepted)
+    const exceptedFrame = await visitFrame(u, `http://news.example.org:${PORT}/withframe?excepted`, frameURL)
+    check('blocking off for the site: nothing hidden in frames inside it either', exceptedFrame.adSlot === 'block' && exceptedFrame.headerWrapper === 'block', exceptedFrame)
 
     u.close()
     await quit(main)

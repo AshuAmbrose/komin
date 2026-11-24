@@ -91,6 +91,21 @@ var parsedFilterData = {}
 var adblockerEngine = null
 var adblockerEnginePromise = null
 var adblockerUpdateTimeout = null
+// Two kinds of the lists' rules the main engine can't apply, each in a small engine of its own, built from the lists'
+// text as it downloads (js/util/adblockExtraRules.js) and saved next to the engine as text (getExtraRulesCachePath):
+// - pop-up rules ($popup): Ghostery's parser refuses the option (about 3,370 rules of Min's lists, 2026-11-14), and it
+//   never counts a page request as third-party, which many of them need. Each rule's type options become $other, a type
+//   nothing else asks this engine about, and filterPopups asks about the pop-up's address as a request of that type from
+//   the opener's page.
+// - tracking-parameter rules ($removeparam, 274): the main engine has them, but its optimizer merges the generic ones
+//   ($removeparam=gclid, =fbclid, =srsltid...) into one rule that keeps a single parameter name, so most never applied
+//   (measured 2026-11-17). This engine is built without optimizations.
+var popupRulesEngine = null
+var removeparamRulesEngine = null
+// Procedural hiding rules (uBlock Origin's :has-text(), :upward(), :remove()..., 567 in Min's lists): the engine keeps them
+// only when built with loadExtendedSelectors (since 2026-11-17), and gives a page each one as a parsed selector, which the
+// page's preload evaluates with Ghostery's evaluator (js/preload/default.js, applyExtendedRules)
+const ADBLOCKER_ENGINE_CONFIG = { loadExtendedSelectors: true }
 
 // the downloaded engine is cached on disk, and refreshed once it's older than this
 // (uBlock Origin's YouTube fixes change almost daily)
@@ -130,10 +145,55 @@ function fetchAdblockerList (url) {
   })
 }
 
+function getExtraRulesCachePath () {
+  return path.join(app.getPath('userData'), 'adblocker-extra-rules.txt')
+}
+
+// getAdblockExtraRules and splitAdblockExtraRules: js/util/adblockExtraRules.js
+
+function setExtraRules (rules) {
+  const { popup, removeparam } = splitAdblockExtraRules(rules)
+  popupRulesEngine = popup.length > 0 ? ElectronBlocker.parse(popup.join('\n')) : null
+  removeparamRulesEngine = removeparam.length > 0 ? ElectronBlocker.parse(removeparam.join('\n'), { enableOptimizations: false }) : null
+}
+
+// the request's address without the lists' tracking parameters, or null. A request one of the lists' exceptions
+// covers (@@||site^) keeps them, as in the main engine
+function removeListedParams (request, mainResult) {
+  if (!removeparamRulesEngine) {
+    return mainResult && mainResult.rewrite ? mainResult.rewrite.url : null
+  }
+  const { rewrite } = removeparamRulesEngine.match(request)
+  if (!rewrite) {
+    return null
+  }
+  const exceptions = adblockerEngine && adblockerEngine.exceptions
+  if (exceptions && typeof exceptions.match === 'function' && exceptions.match(request, adblockerEngine.isFilterExcluded.bind(adblockerEngine))) {
+    return null
+  }
+  return rewrite.url
+}
+
 function downloadAdblockerEngine () {
-  return ElectronBlocker.fromLists(fetchAdblockerList, ADBLOCKER_LISTS).then(function (engine) {
+  // the lists' text passes here on its way to the engine, for their pop-up and tracking-parameter rules
+  const extraRules = new Map()
+  const fetchKeepingExtraRules = function (url) {
+    return fetchAdblockerList(url).then(function (response) {
+      if (!ADBLOCKER_LISTS.includes(url)) {
+        return response
+      }
+      return response.text().then(function (text) {
+        extraRules.set(url, getAdblockExtraRules(text))
+        return { text: () => Promise.resolve(text) }
+      })
+    })
+  }
+  return ElectronBlocker.fromLists(fetchKeepingExtraRules, ADBLOCKER_LISTS, ADBLOCKER_ENGINE_CONFIG).then(function (engine) {
     adblockerEngine = engine
+    const rules = Array.from(extraRules.values()).flat()
+    setExtraRules(rules)
     fs.promises.writeFile(getAdblockerCachePath(), Buffer.from(engine.serialize())).catch(function () {})
+    fs.promises.writeFile(getExtraRulesCachePath(), rules.join('\n')).catch(function () {})
     scheduleAdblockerUpdate(ADBLOCKER_ENGINE_MAX_AGE)
     return engine
   })
@@ -156,11 +216,17 @@ function scheduleAdblockerUpdate (delay) {
 
 function loadCachedAdblockerEngine () {
   const cachePath = getAdblockerCachePath()
-  return Promise.all([fs.promises.readFile(cachePath), fs.promises.stat(cachePath)]).then(function ([data, stat]) {
+  const extraRules = fs.promises.readFile(getExtraRulesCachePath(), 'utf8').catch(() => null)
+  return Promise.all([fs.promises.readFile(cachePath), fs.promises.stat(cachePath), extraRules]).then(function ([data, stat, extraRulesText]) {
     adblockerEngine = ElectronBlocker.deserialize(new Uint8Array(data))
-    // keep using the cached copy for now, and refresh it in the background once it's stale
+    if (extraRulesText !== null) {
+      setExtraRules(extraRulesText.split('\n').filter(Boolean))
+    }
+    // keep using the cached copy for now, and refresh it in the background once it's stale (at once, in a minute, for an
+    // engine saved before 2026-11-17: no extra rules, no procedural rules)
     const age = Date.now() - stat.mtimeMs
-    scheduleAdblockerUpdate(Math.max(60 * 1000, ADBLOCKER_ENGINE_MAX_AGE - age))
+    const older = extraRulesText === null || !(adblockerEngine.config && adblockerEngine.config.loadExtendedSelectors)
+    scheduleAdblockerUpdate(older ? 60 * 1000 : Math.max(60 * 1000, ADBLOCKER_ENGINE_MAX_AGE - age))
     return adblockerEngine
   })
 }
@@ -168,7 +234,8 @@ function loadCachedAdblockerEngine () {
 function loadBundledAdblockerEngine () {
   // offline fallback: build the engine from the copy of EasyList that ships with the app
   return fs.promises.readFile(path.join(__dirname, 'ext/filterLists/easylist+easyprivacy-noelementhiding.txt'), 'utf8').then(function (text) {
-    adblockerEngine = ElectronBlocker.parse(text)
+    adblockerEngine = ElectronBlocker.parse(text, ADBLOCKER_ENGINE_CONFIG)
+    setExtraRules(getAdblockExtraRules(text))
     return adblockerEngine
   })
 }
@@ -229,8 +296,10 @@ function requestDomainIsException (domain) {
   return enabledFilteringOptions.exceptionDomains.includes(removeWWW(domain))
 }
 
-// ses: the session of the tab opening the popup
-function filterPopups (url, ses) {
+// ses: the session of the tab opening the popup; openerURL: its page's address. Rules about the page a pop-up comes from
+// ($third-party, domain=) are about the opener: until 2026-11-17 the pop-up's own address stood in for it, so a third-party
+// rule of Min's older matcher never applied (suite popups)
+function filterPopups (url, ses, openerURL) {
   if (!/^https?:\/\//i.test(url)) {
     return true
   }
@@ -240,13 +309,15 @@ function filterPopups (url, ses) {
   }
 
   const domain = parser.getUrlHost(url)
-  if (enabledFilteringOptions.blockingLevel > 0 && !requestDomainIsException(domain)) {
+  const openerIsWeb = /^https?:\/\//i.test(openerURL || '')
+  const openerDomain = openerIsWeb ? parser.getUrlHost(openerURL) : domain
+  if (enabledFilteringOptions.blockingLevel > 0 && !requestDomainIsException(domain) && !requestDomainIsException(openerDomain)) {
     if (adblockerEngine) {
       const req = fromElectronDetails({
         id: 0,
         url: url,
         resourceType: 'mainFrame',
-        referrer: 'https://' + domain
+        referrer: openerIsWeb ? openerURL : 'https://' + domain
       })
       const { match } = adblockerEngine.match(req)
       if (match) {
@@ -254,11 +325,19 @@ function filterPopups (url, ses) {
         return false
       }
     }
+    // the lists' $popup rules (popupRulesEngine)
+    if (popupRulesEngine && openerIsWeb) {
+      const { match } = popupRulesEngine.match(fromElectronDetails({ id: 0, url: url, resourceType: 'other', referrer: openerURL }))
+      if (match) {
+        unsavedBlockedRequests++
+        return false
+      }
+    }
     if (
       enabledFilteringOptions.blockingLevel === 2 ||
-      (enabledFilteringOptions.blockingLevel === 1 && requestIsThirdParty(domain, url))
+      (enabledFilteringOptions.blockingLevel === 1 && requestIsThirdParty(openerDomain, url))
     ) {
-      if (parser.matches(parsedFilterData, url, { domain: domain, elementType: 'popup' })) {
+      if (parser.matches(parsedFilterData, url, { domain: openerDomain, elementType: 'popup' })) {
         unsavedBlockedRequests++
         return false
       }
@@ -315,9 +394,21 @@ function handleRequest (details, callback) {
 
   const isExceptionDomain = domain && requestDomainIsException(domain)
 
-  const modifiedURL = (enabledFilteringOptions.blockingLevel > 0 && !isExceptionDomain) ? removeTrackingParams(details.url) : details.url
+  const filteringOn = enabledFilteringOptions.blockingLevel > 0 && !isExceptionDomain
+  let modifiedURL = filteringOn ? removeTrackingParams(details.url) : details.url
+  const isWebRequest = details.url.startsWith('http://') || details.url.startsWith('https://')
 
-  if (!(details.url.startsWith('http://') || details.url.startsWith('https://')) || details.resourceType === 'mainFrame') {
+  // A page's own address loses the lists' tracking parameters too ($removeparam, removeListedParams; ignored until
+  // 2026-11-17, suite adblock-network). Pages themselves are never blocked here.
+  if (isWebRequest && details.resourceType === 'mainFrame' && filteringOn && adblockerEngine) {
+    const request = fromElectronDetails(details.referrer ? details : Object.assign({}, details, { referrer: details.initiator || (domain ? 'https://' + domain : '') }))
+    const cleaned = removeListedParams(request, adblockerEngine.match(request))
+    if (cleaned) {
+      modifiedURL = removeTrackingParams(cleaned)
+    }
+  }
+
+  if (!isWebRequest || details.resourceType === 'mainFrame') {
     callback({
       cancel: false,
       requestHeaders: details.requestHeaders,
@@ -348,7 +439,15 @@ function handleRequest (details, callback) {
       if (adblockerEngine.config.guessRequestTypeFromUrl === true && request.type === 'other') {
         request.guessTypeOfRequest()
       }
-      const { redirect, match } = adblockerEngine.match(request)
+      const result = adblockerEngine.match(request)
+      const { redirect, match } = result
+      // the lists' tracking parameters ($removeparam), as for pages above; applied below if nothing blocks the request
+      if (!redirect && !match) {
+        const cleaned = removeListedParams(request, result)
+        if (cleaned) {
+          modifiedURL = removeTrackingParams(cleaned)
+        }
+      }
       if (redirect) {
         unsavedBlockedRequests++
         callback({
@@ -481,27 +580,32 @@ function extensionFiltersSender (sender) {
 }
 
 // Inserts the page's hiding CSS and runs its scriptlets. With scriptsToCaller, returns the scriptlets instead of running
-// them, for the page's preload to run before the page's own scripts (getCosmeticsForPageStart, below). Returns
-// {active, scriptlets}: active false when no hiding applies to the page (an extension's job, or an exception rule).
-function injectCosmeticFiltersForSender (engine, sender, url, scriptsToCaller) {
+// them, for the page's preload to run before the page's own scripts (getCosmeticsForPageStart, below), and the page's
+// procedural rules (extended); with stylesToCaller, returns the CSS instead of inserting it (a frame inside the page:
+// insertCSS only reaches a tab's top frame, so the frame's preload inserts it). Returns {active, scriptlets, styles,
+// extended}: active false when no hiding applies to the page (an extension's job, or an exception rule).
+function injectCosmeticFiltersForSender (engine, sender, url, scriptsToCaller, stylesToCaller) {
   if (!engine || !sender || sender.isDestroyed() || extensionFiltersSender(sender)) {
     return { active: false, scriptlets: null }
   }
   const hostname = parser.getUrlHost(url)
-  const { active, styles, scripts } = engine.getCosmeticsFilters({
+  const { active, styles, scripts, extended } = engine.getCosmeticsFilters({
     domain: getCosmeticDomain(hostname),
     hostname: hostname,
     url: url,
     getBaseRules: true,
     getInjectionRules: true,
-    getExtendedRules: false,
+    // procedural rules go to the page's preload; none when Min runs them itself (after the engine loaded)
+    getExtendedRules: scriptsToCaller === true,
     getRulesFromHostname: true,
     getRulesFromDOM: false
   })
   if (active === false) {
     return { active: false, scriptlets: null }
   }
-  if (styles && styles.length > 0) {
+  const extendedForCaller = scriptsToCaller && Array.isArray(extended) && extended.length > 0 ? extended.map(rule => ({ ast: rule.ast, attribute: rule.attribute || null, directive: rule.directive || null })) : null
+  const stylesForCaller = stylesToCaller && styles && styles.length > 0 ? styles : null
+  if (styles && styles.length > 0 && !stylesToCaller) {
     sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
   }
   if (scripts && scripts.length > 0) {
@@ -514,11 +618,11 @@ function injectCosmeticFiltersForSender (engine, sender, url, scriptsToCaller) {
       return '((scriptletGlobals) => {\ntry {\n' + s + '\n} catch (e) {}\n})(minScriptletGlobals);'
     }).join('\n') + '\n})();'
     if (scriptsToCaller) {
-      return { active: true, scriptlets: combined }
+      return { active: true, scriptlets: combined, styles: stylesForCaller, extended: extendedForCaller }
     }
     sender.executeJavaScript(combined).catch(function () {})
   }
-  return { active: true, scriptlets: null }
+  return { active: true, scriptlets: null, styles: stylesForCaller, extended: extendedForCaller }
 }
 
 function cosmeticFiltersApply (event, url) {
@@ -535,10 +639,25 @@ function cosmeticFiltersApply (event, url) {
   return !!event.sender && !event.sender.isDestroyed()
 }
 
-// whether a message came from its tab's top frame (the hiding CSS and the scriptlets are for the tab's main frame)
+// whether a message came from its tab's top frame
 function cosmeticSenderIsTopFrame (event) {
   const mainFrame = event.sender && !event.sender.isDestroyed() && event.sender.mainFrame
   return !!mainFrame && event.processId === mainFrame.processId && event.frameId === mainFrame.routingId
+}
+
+// whether hiding applies to the frame a message came from: a tab's top frame, or since 2026-11-17 a frame inside its page,
+// unless blocking is off for the page's site (the shield button). Until then frames got no hiding CSS and no scriptlets
+// (AdGuard's test pages, uBlock Origin does both; suite adblock-cosmetic)
+function cosmeticSenderApplies (event) {
+  if (cosmeticSenderIsTopFrame(event)) {
+    return true
+  }
+  const pageURL = event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : ''
+  if (!/^https?:\/\//i.test(pageURL)) {
+    return false
+  }
+  const pageDomain = parser.getUrlHost(pageURL)
+  return !(pageDomain && requestDomainIsException(pageDomain))
 }
 
 // For a page's preload as the page starts: the ad blocker's part of the answer to the frame's one request, page-start
@@ -548,15 +667,17 @@ function cosmeticSenderIsTopFrame (event) {
 // it costs about 3–5 MB a tab) rather than once it's parsed. null when no hiding applies: not a tab's top frame, not
 // http(s), blocking off, or off for this site.
 function getCosmeticsForPageStart (event, url) {
-  if (!cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url)) {
+  if (!cosmeticSenderApplies(event) || !cosmeticFiltersApply(event, url)) {
     return null
   }
+  const topFrame = cosmeticSenderIsTopFrame(event)
   const whileLoading = settings.get('hideAdSpacesWhileLoading') === true
   if (adblockerEngine) {
-    const result = injectCosmeticFiltersForSender(adblockerEngine, event.sender, url, true)
-    return { scriptlets: result.scriptlets, dom: result.active, whileLoading }
+    // a frame inside the page gets its CSS in the answer (styles), for its preload to insert
+    const result = injectCosmeticFiltersForSender(adblockerEngine, event.sender, url, true, !topFrame)
+    return { scriptlets: result.scriptlets, dom: result.active, whileLoading, styles: result.styles || null, extended: result.extended || null }
   }
-  if (adblockerEnginePromise) {
+  if (adblockerEnginePromise && topFrame) {
     // the engine is still loading (just after startup): it all comes once it's ready, a round trip later
     adblockerEnginePromise.then(function (engine) {
       if (engine && event.sender && !event.sender.isDestroyed()) {
@@ -578,8 +699,8 @@ function cosmeticDomList (value) {
 }
 
 ipc.on('cosmetic-filters-dom', function (event, url, found) {
-  // the top frame's preload reports
-  if (!adblockerEngine || !found || !cosmeticSenderIsTopFrame(event) || !cosmeticFiltersApply(event, url) || extensionFiltersSender(event.sender)) {
+  // a frame's preload reports: the tab's top frame, or a frame inside its page
+  if (!adblockerEngine || !found || !cosmeticSenderApplies(event) || !cosmeticFiltersApply(event, url) || extensionFiltersSender(event.sender)) {
     return
   }
   try {
@@ -598,7 +719,12 @@ ipc.on('cosmetic-filters-dom', function (event, url, found) {
       getRulesFromDOM: true
     })
     if (active !== false && styles && styles.length > 0) {
-      event.sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
+      if (cosmeticSenderIsTopFrame(event)) {
+        event.sender.insertCSS(styles, { cssOrigin: 'user' }).catch(function () {})
+      } else {
+        // only the frame itself can insert into a frame (js/preload/default.js)
+        event.reply('cosmetic-filters-css', styles)
+      }
     }
   } catch (e) {
     console.warn('generic cosmetic filters failed for ' + url, e)
