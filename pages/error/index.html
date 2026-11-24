@@ -2,8 +2,9 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <!-- only this page's own script files run: no inline script, no javascript: addresses -->
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self'" />
+    <!-- only this page's own files: no inline script, no javascript: addresses, no other site's content (upstream's
+         29cb4d31, stricter than Min's script-src 'self' of 2026-11-13) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'" />
 
     <link rel="stylesheet" href="../pagebase.css" />
   </head>

@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'" />
 
     <title data-string="sessionRestoreErrorTitle"></title>
     <link rel="stylesheet" href="../pagebase.css" />
@@ -29,16 +30,7 @@
     <script src="../../js/util/theme.js"></script>
     <script src="../../dist/localization.build.js"></script>
 
-    <script>
-      var backupLoc = new URLSearchParams(window.location.search).get(
-        "backupLoc"
-      );
-
-      var backupInfoEl = document.getElementById("backup-info");
-      backupInfoEl.textContent = l("sessionRestoreErrorBackupInfo").replace(
-        "%l",
-        backupLoc
-      );
-    </script>
+    <!-- in a file of its own: the page's security rule allows no inline script (since 2026-11-24) -->
+    <script src="sessionRestoreError.js"></script>
   </body>
 </html>

@@ -7,6 +7,13 @@
 //   A3 a second spelling of manifest.json in an extension's zip (MANIFEST.JSON, manifest.json::$DATA) replaced the
 //      manifest the user had reviewed, on Windows, where both name one file
 //   A4 GM_xmlhttpRequest followed redirects to sites the script's @connect doesn't list, with cookies
+//   A6 a popup's first navigations, before Min's interface has made it a tab: sent to an internal page right after
+//      window.open, or redirected there (found 2026-11-24 reading upstream's 21c75b48, which attaches its guard as a view
+//      is created; Min's was attached once the interface adopted the popup)
+//   A7 a page could make Min's password manager fill a saved password with events it made up itself (a focus, then a fake
+//      mousedown on Min's key button) and read it (upstream's 83f3830a checks isTrusted; 2026-11-24)
+//   A8 Min's password manager filled and offered to save passwords on plain http: pages (upstream's 87d6cd6f: only https:,
+//      file: and local addresses; 2026-11-24). A real click on a local page still fills (the control)
 //   A5 an extension's hidden helper page (offscreen document) has no context isolation: can its code reach Min's raw IPC?
 //   B1 internal pages took settings from any window that posted them (a website that opened the page as a popup)
 //   B2 the address bar showed an address the tab never went to (a navigation that ends without a page: 204 No Content)
@@ -72,10 +79,23 @@ const server = http.createServer(function (req, res) {
       return html('<title>attacker</title><script>' +
         'window.go = u => { location.href = u }; window.openTab = u => { window.open(u) }; window.openPopup = u => { window.open(u, "p" + Math.random(), "width=400,height=300") };' +
         'window.frame = u => { const f = document.createElement("iframe"); f.src = u; document.body.appendChild(f) };' +
+        // A6: a popup sent on at once, before Min's interface has made it a tab; a popup redirected there by the server
+        'window.popupThenGo = u => { const w = window.open("about:blank", "q" + Math.random()); w.location.href = u };' +
+        'window.popupRedirect = u => { window.open("/to-internal?u=" + encodeURIComponent(u)) };' +
         // B1: a popup that fails to load shows Min's error page, which this page still holds
         'window.failingPopup = () => { window.popup = window.open("http://127.0.0.1:1/", "failing", "width=400,height=300"); return 1 };' +
         'window.forgeSettings = () => { window.popup.postMessage({ message: "receiveSettingsData", settings: { securityProbe: "B1", darkMode: true } }, "*"); return 1 }' +
         '</script><h1>attacker</h1>')
+    case '/to-internal':
+      res.writeHead(302, { location: url.searchParams.get('u') })
+      return res.end()
+    case '/login':
+      // A7/A8: a login form; with ?steal its own script focuses the password box, fakes a mousedown on the key button Min
+      // adds, and shows what the box then holds
+      return html('<title>login</title><form action="/login-done"><input name="username" autocomplete="username" id="user"><input type="password" name="password" autocomplete="current-password" id="pw"><button type="submit" id="go">Sign in</button></form>' +
+        (url.searchParams.has('steal') ? '<script>addEventListener("load", () => setTimeout(() => { document.getElementById("pw").focus(); setTimeout(() => { const key = Array.from(document.body.children).reverse().find(e => e.tagName === "DIV" && e.querySelector("svg")); if (key) key.firstChild.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })); setTimeout(() => { document.title = "pw:" + document.getElementById("pw").value + (key ? "" : " (no key button)") }, 1500) }, 500) }, 1500))</script>' : ''))
+    case '/login-done':
+      return html('<title>signed in</title>')
     case '/nocontent':
       res.writeHead(204)
       return res.end()
@@ -191,7 +211,7 @@ async function section (name, fn) {
 ;(async () => {
   let main
   try {
-    main = await launch(SITE + '/start', { args: ['--use-fake-device-for-media-stream'] })
+    main = await launch(SITE + '/start', { args: ['--use-fake-device-for-media-stream', '--host-resolver-rules=MAP insecure-login.test 127.0.0.1'] })
     const u = await ui()
     await sleep(1500)
 
@@ -223,9 +243,37 @@ async function section (name, fn) {
           (await frameURLs(main, SITE + '/attacker')).some(url => url.includes('m=' + way))
       }
       check('A1 a website can\'t open Min\'s internal pages (address, new tab, popup, frame)', Object.values(reached).every(r => !r), reached)
+      // A6: a popup's first navigations
+      const reachedByPopups = {}
+      // after each, a Settings request that ends in main's notifyExtensionPages, which walks every tab view: it threw
+      // ("reading 'isDestroyed'") once a popup had left a view without its page (found 2026-11-24)
+      const afterwards = {}
+      for (const way of ['popupThenGo', 'popupRedirect']) {
+        await withClick(attacker, `${way}(${JSON.stringify(errorPageFor(way))}); 1`).catch(() => {})
+        await sleep(2500)
+        reachedByPopups[way] = (await targetsStartingWith(errorPageFor(way))).length > 0 ||
+          (await u.evaluate(`tabs.get().some(t => t.url.includes('m=${way}'))`)) === true
+        afterwards[way] = {
+          tabs: await u.evaluate('tabs.get().map(t => t.url.slice(0, 60) + (t.hasWebContents ? \'\' : \' (no page)\'))'),
+          settingsRequest: await settingsPage.evaluate("extensionPages.request('remove', { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }).then(() => 'answered', e => e.message)")
+        }
+      }
+      check('A6 a popup can\'t reach Min\'s internal pages before it\'s a tab (sent there at once, redirected there)', Object.values(reachedByPopups).every(r => !r), reachedByPopups)
+      check('A6 after those popups, Min still answers Settings\' extension requests', Object.values(afterwards).every(a => !/isDestroyed/.test(a.settingsRequest)), afterwards)
       attacker.close()
+      const probeSettings = () => sleep(800).then(() => settingsPage.evaluate("extensionPages.request('remove', { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }).then(() => 'answered', e => e.message)"))
+      const closing = {}
       await closeTabsStartingWith(u, SITE + '/attacker')
+      closing.opener = await probeSettings()
+      await closeTabsStartingWith(u, SITE + '/to-internal')
+      closing.redirectedPopup = await probeSettings()
+      await closeTabsStartingWith(u, 'about:blank')
+      closing.blankPopup = await probeSettings()
       await closeTabsStartingWith(u, ERROR_PAGE)
+      check('A6 closing those tabs one by one, then a Settings request (info)', true, closing)
+      await sleep(1000)
+      const afterClosing = await settingsPage.evaluate("extensionPages.request('remove', { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }).then(() => 'answered', e => e.message)")
+      check('A6 after those popups\' tabs are closed, Min still answers Settings\' extension requests', !/isDestroyed/.test(afterClosing), afterClosing)
 
       // the error page with a javascript: address, as the user or an extension could open it; then "Try again"
       await openTab(u, errorPageFor('direct'))
@@ -238,6 +286,58 @@ async function section (name, fn) {
       check('A1 the error page\'s "Try again" doesn\'t run a javascript: address', title !== 'A1 ran' && probe !== 'A1', { title, settingWrittenByThePage: probe || null })
       errorPage.close()
       await closeTabsStartingWith(u, ERROR_PAGE)
+    })
+
+    await section('A7-A8', async function () {
+      const INSECURE = `http://insecure-login.test:${PORT}`
+      const save = (domain, password) => u.evaluate(`ipc.invoke('credentialStoreSetPassword', ${JSON.stringify({ domain, username: 'victim', password })})`)
+      await save('127.0.0.1', 'SECRET-LOCAL-PW')
+      await save('insecure-login.test', 'SECRET-HTTP-PW')
+      await sleep(500)
+      // A7: the page's own made-up events
+      await openTab(u, SITE + '/login?steal')
+      const thief = await pageTarget(SITE + '/login?steal')
+      const stolen = await waitFor(async () => { const v = await thief.evaluate('document.title'); return v.startsWith('pw:') ? v : null }, 8000)
+      check('A7 a page can\'t make Min fill a saved password with events it made up', !/SECRET/.test(stolen || ''), stolen)
+      thief.close()
+      await closeTabsStartingWith(u, SITE + '/login')
+      // a real click on Min's key button: fills on a local page (the control), not on an http: page
+      const realClick = async (base) => {
+        await openTab(u, base + '/login')
+        const page = await pageTarget(base + '/login')
+        await sleep(1500)
+        await main.evaluate(`(() => { const wc = process.mainModule.require('electron').webContents.getAllWebContents().find(w => w.getURL().startsWith(${JSON.stringify(base + '/login')})); if (wc) wc.focus(); return 1 })()`)
+        await page.evaluate("document.getElementById('pw').focus(); 1")
+        await sleep(600)
+        const box = await page.evaluate('(() => { const key = Array.from(document.body.children).reverse().find(e => e.tagName === "DIV" && e.querySelector("svg")); if (!key) return null; const r = key.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()')
+        if (box) {
+          for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+            await page.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 })
+          }
+        }
+        await sleep(1500)
+        const filled = await page.evaluate("document.getElementById('pw').value")
+        page.close()
+        await closeTabsStartingWith(u, base + '/login')
+        return { keyButton: Boolean(box), filled }
+      }
+      const local = await realClick(SITE)
+      const insecure = await realClick(INSECURE)
+      check('A8 a real click fills a saved password on a local page (the control)', local.filled === 'SECRET-LOCAL-PW', local)
+      check('A8 Min doesn\'t fill passwords on an http: page', !/SECRET/.test(insecure.filled || ''), insecure)
+      // and doesn't offer to save one typed there
+      await openTab(u, INSECURE + '/login')
+      const form = await pageTarget(INSECURE + '/login')
+      await sleep(1200)
+      await form.evaluate("document.getElementById('user').value = 'someone'; document.getElementById('pw').value = 'typed-on-http'; 1")
+      await withClick(form, "document.getElementById('go').click(); 1")
+      await sleep(2000)
+      const offered = await u.evaluate("!document.getElementById('password-capture-bar').hidden")
+      check('A8 Min doesn\'t offer to save a password typed on an http: page', offered === false, { saveBarShown: offered })
+      await u.evaluate("document.getElementById('password-capture-bar').hidden = true; 1")
+      form.close()
+      await closeTabsStartingWith(u, INSECURE)
+      await u.evaluate("Promise.all(['127.0.0.1', 'insecure-login.test'].map(domain => ipc.invoke('credentialStoreDeletePassword', { domain, username: 'victim' }))).then(() => 1)")
     })
 
     await section('B1', async function () {
