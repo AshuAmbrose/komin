@@ -1,0 +1,6 @@
+{
+  "name": "min-wpt-baseline",
+  "private": true,
+  "description": "A bare Electron app web-platform-tests compares Min with (test/e2e/wpt.js)",
+  "main": "main.js"
+}

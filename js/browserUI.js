@@ -237,17 +237,29 @@ tasks.on('tab-updated', function (id, key) {
   }
 })
 
-webviews.bindEvent('did-create-popup', function (tabId, popupId, initialURL) {
+// a window a page opened (window.open, a link opening a new tab), shown as a tab next to the page
+webviews.bindEvent('did-create-popup', function (tabId, popupId, initialURL, disposition) {
+  var opener = tabs.get(tabId) || {}
   var popupTab = tabs.add({
     // in most cases, initialURL will be overwritten once the popup loads, but if the URL is a downloaded file, it will remain the same
     url: initialURL,
-    private: tabs.get(tabId).private
+    private: opener.private,
+    // Chromium makes a private tab's popup in its opener's session: the tab keeps that session if it's created again
+    // (after hibernation), instead of a new empty one
+    partition: opener.private ? (opener.partition || opener.id) : undefined
   })
   tabBar.addTab(popupTab)
   webviews.add(popupTab, popupId)
-  switchToTab(popupTab)
+  // Ctrl+click and middle-click open in the background, unless the user wants new tabs in front
+  if (disposition === 'background-tab' && !settings.get('openTabsInForeground')) {
+    tabBar.getTab(popupTab).scrollIntoView()
+  } else {
+    switchToTab(popupTab)
+  }
 })
 
+// main sent this for window.open() without features until 2026-11-17 (did-create-popup above since); old-behaviour.js
+// switches back to it for comparisons
 webviews.bindEvent('new-tab', function (tabId, url, openInForeground) {
   var newTab = tabs.add({
     url: url,

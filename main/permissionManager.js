@@ -263,6 +263,32 @@ function hasPendingRequestForOrigin (requestOrigin, permission, details) {
   return false
 }
 
+// Pages that aren't secure (http: on a real host name) get no notifications, as the standard says and Chrome does (it
+// answers "denied" without asking). Without this Min showed its bar, and since it keeps permissions by host name, an
+// "allow" saved on a site's https: pages counted on its http: pages too (suite permissions, 2026-11-17).
+function isSecureContextURL (url) {
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch (e) {
+    return false
+  }
+  if (['https:', 'wss:', 'file:', 'chrome-extension:', 'min:'].includes(parsed.protocol)) {
+    return true
+  }
+  const host = parsed.hostname
+  return host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host)
+}
+
+function notificationsFromInsecurePage (permission, url, webContents) {
+  if (permission !== 'notifications') {
+    return false
+  }
+  // a frame is only secure inside a secure page
+  const topURL = webContents && !webContents.isDestroyed() ? webContents.getURL() : ''
+  return !isSecureContextURL(url) || (Boolean(topURL) && !isSecureContextURL(topURL))
+}
+
 function pagePermissionRequestHandler (webContents, permission, callback, details) {
   if (permission === 'fullscreen') {
     callback(true)
@@ -280,7 +306,7 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
     return
   }
 
-  if (!details.requestingUrl) {
+  if (!details.requestingUrl || notificationsFromInsecurePage(permission, details.requestingUrl, webContents)) {
     callback(false)
     return
   }
@@ -361,6 +387,10 @@ function pagePermissionCheckHandler (webContents, permission, requestingOrigin, 
 
   if (permission === 'clipboard-sanitized-write' || permission === 'display-capture') {
     return true
+  }
+
+  if (notificationsFromInsecurePage(permission, requestingOrigin || (details && details.securityOrigin) || '', webContents)) {
+    return false
   }
 
   let requestHostname

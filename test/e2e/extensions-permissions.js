@@ -132,6 +132,13 @@ const open = async (u, url) => { await u.evaluate(`ipc.emit('extensions-open-tab
     check('cookies with access to one site: only that site\'s cookies are listed', Array.isArray(own) && own.includes('127.0.0.1 here=1') && own.includes('127.0.0.1 secret=1') && !own.some(c => c.startsWith('localhost')), own)
     check('cookies with access to one site: another site\'s cookie is refused, its own is read', typeof refused === 'string' && refused.startsWith('refused') && allowed === '1', { refused, allowed })
     check('cookies with access to one site: only that site\'s cookie changes are reported', changes.includes('127.0.0.1 here') && !changes.some(c => c.startsWith('localhost')), changes)
+    // permissions.contains compares site patterns as Chrome does: http://127.0.0.1/* covers a path on that site. The library
+    // compared them as text, so Grammarly (https://*/*) was told it had no access to its own site and never read its
+    // sign-in cookie (2026-11-14 survey)
+    const containsCovered = await cw.evaluate("chrome.permissions.contains({ permissions: ['cookies'], origins: ['http://127.0.0.1/account/*'] })")
+    const containsOther = await cw.evaluate("chrome.permissions.contains({ origins: ['http://localhost/*'] })")
+    const containsUndeclared = await cw.evaluate("chrome.permissions.contains({ permissions: ['tabs'] })")
+    check('permissions.contains: a site its host permission covers counts, another site or permission doesn\'t', containsCovered === true && containsOther === false && containsUndeclared === false, { covered: containsCovered, other: containsOther, undeclared: containsUndeclared })
     // the library's bridge to main takes the extension's id as an argument and stays within reach of extensions' code:
     // the unprivileged extension asks for cookies in the name of the one that may read 127.0.0.1's
     const posing = await w.evaluate(`readCookiesAs(${JSON.stringify(cookiesId)})`)

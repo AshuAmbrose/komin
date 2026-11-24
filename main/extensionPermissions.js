@@ -275,6 +275,11 @@ async function answerExtensionAPICall (name, handler, event, args) {
   if (name === 'permissions.request' || name === 'permissions.remove') {
     return answerExtensionPermissionsCall(name, handler, event, args)
   }
+  // site patterns compared as Chrome does (http://127.0.0.1/* covers http://127.0.0.1/account/*); the library compares
+  // them as text, so Grammarly (https://*/*) was told it had no access to its own site (2026-11-14 survey)
+  if (name === 'permissions.contains') {
+    return extensionHasGrants(extension, { permissions: extensionPermissionList(args[0] && args[0].permissions), origins: extensionPermissionList(args[0] && args[0].origins) })
+  }
   const namespace = name.split('.')[0]
   const needs = EXTENSION_API_PERMISSIONS[namespace]
   if (needs && !extensionHasGrantedPermission(extension, needs)) {
@@ -371,7 +376,7 @@ function startExtensionPermissionChecks () {
   })
   for (const [name, handler] of router.handlers) {
     const namespace = name.split('.')[0]
-    if (typeof handler.callback === 'function' && (EXTENSION_API_PERMISSIONS[namespace] || namespace === 'tabs' || namespace === 'windows' || name === 'permissions.request' || name === 'permissions.remove')) {
+    if (typeof handler.callback === 'function' && (EXTENSION_API_PERMISSIONS[namespace] || namespace === 'tabs' || namespace === 'windows' || name === 'permissions.request' || name === 'permissions.remove' || name === 'permissions.contains')) {
       router.handlers.set(name, Object.assign({}, handler, {
         callback: (event, ...args) => answerExtensionAPICall(name, handler, event, args)
       }))

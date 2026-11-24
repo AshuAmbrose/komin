@@ -11,6 +11,18 @@
 //   domainWithoutWWW       site rules get the hostname without "www." (master), not the registrable domain (pitfall 52)
 //   noExtensionTabList     Min's tab list for extensions off (main/extensionTabs.js, startExtensionTabSync)
 //   minimizedFocusedInUse  a minimized window that Windows left focused counts as in use (master)
+//   popupsAsNewTabs        window.open() without features, and links that open a new tab, go to a tab Min opens itself and
+//                          the page gets null (upstream's rule, Min's until 2026-11-17; main/viewManager.js)
+//   noProceduralRules      the engine's procedural hiding rules not sent to pages (Min's until 2026-11-17; the engine still
+//                          has them; main/filtering.js, injectCosmeticFiltersForSender)
+//   noFrameHiding          frames inside a page get no hiding CSS and no scriptlets, only a tab's top frame (Min's until
+//                          2026-11-17; main/filtering.js, cosmeticSenderApplies)
+//   noPopupRules           the lists' $popup rules unused, and pop-up rules about the opener compared with the pop-up's own
+//                          address (Min's until 2026-11-17; main/filtering.js, filterPopups)
+//   noExtensionPermissionChecks  extensions' permissions unchecked, as before 2026-11-12: main's checks of tabs'
+//                          addresses, cookies and who is asking (startExtensionPermissionChecks) and the preload's removal
+//                          of undeclared APIs (js/preload/extensionSupport.js); to tell whether an extension's trouble
+//                          comes from them
 // When the generic rules' watcher starts is the setting hideAdSpacesWhileLoading since 2026-11-11 (off, the default, is
 // master's DOMContentLoaded): measurement scripts seed it in the run's settings instead (the switch watcherFromParsed
 // did it before).
@@ -48,7 +60,35 @@ const SWITCHES = {
   minimizedFocusedInUse: t => replaceAll(t, 'main.build.js', [
     ['BaseWindow.getFocusedWindow() === newWin && !newWin.isMinimized()', 'BaseWindow.getFocusedWindow() === newWin'],
     ['const minInUse = focusedWindow !== null && !focusedWindow.isMinimized()', 'const minInUse = focusedWindow !== null']
-  ])
+  ]),
+  popupsAsNewTabs: t => replaceAll(t, 'main.build.js', [
+    ['(target="_blank") has none here either.\n    */\n',
+      '(target="_blank") has none here either.\n    */\n' +
+      "    if (details.url && details.url !== 'about:blank' && !details.features) {\n" +
+      '      const eventTarget = getWindowFromViewContents(view.webContents) || windows.getCurrent()\n' +
+      "      getWindowWebContents(eventTarget).send('view-event', { tabId: id, event: 'new-tab', args: [details.url, !(details.disposition === 'background-tab')] })\n" +
+      "      return { action: 'deny' }\n" +
+      '    }\n']
+  ]),
+  noProceduralRules: t => replaceAll(t, 'main.build.js', [
+    ['getExtendedRules: scriptsToCaller === true,', 'getExtendedRules: false,']
+  ]),
+  noFrameHiding: t => replaceAll(t, 'main.build.js', [
+    ['function cosmeticSenderApplies (event) {\n', 'function cosmeticSenderApplies (event) {\n  return cosmeticSenderIsTopFrame(event)\n']
+  ]),
+  noPopupRules: t => replaceAll(t, 'main.build.js', [
+    ['if (popupRulesEngine && openerIsWeb) {', 'if (false) {'],
+    ['requestIsThirdParty(openerDomain, url)', 'requestIsThirdParty(domain, url)'],
+    ["parser.matches(parsedFilterData, url, { domain: openerDomain, elementType: 'popup' })", "parser.matches(parsedFilterData, url, { domain: domain, elementType: 'popup' })"]
+  ]),
+  noExtensionPermissionChecks: function (t) {
+    replaceAll(t, 'main.build.js', [
+      ['  startExtensionPermissionChecks()\n', '\n']
+    ])
+    replaceAll(t, 'js/preload/extensionSupport.js', [
+      ["['cookies', 'webNavigation', 'notifications', 'contextMenus'].forEach(", '[].forEach(']
+    ])
+  }
 }
 
 module.exports = function oldBehaviour (t, names = (process.env.MIN_TEST_OLD || '').split(',')) {

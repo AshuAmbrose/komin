@@ -8,6 +8,9 @@
 // own still list tabs in the order their pages were created, number the tabs a query matched, and drop a tab without a page
 // (pitfall 51)? And with Min's permission checks off (main/extensionPermissions.js, and the APIs js/preload/extensionSupport.js
 // takes away): does the library still give an extension that asked for nothing every tab's address and every site's cookies?
+// And Min's workarounds for Ghostery's ad-block engine (main/filtering.js, section 10.2; checked in Node, without Min): does
+// its optimizer still merge the generic $removeparam rules into one that keeps a single parameter name (pitfall 60), and
+// does it still count a page (main_frame) request as never third-party (pitfall 62)? Run after every Ghostery upgrade too.
 // A PASS here means "the workaround is still needed". A FAIL means Electron or the library changed: check whether Min's
 // workaround can go.
 const t = require('./harness')({ name: 'electron-workarounds', minutes: 10 })
@@ -36,8 +39,34 @@ const UNPRIVILEGED = t.extension('unprivileged')
 const page = name => PAGE + '?' + name
 const RULES = t.extension('network-noworker', 'rules-fresh')
 const workerOf = id => target(t => t.type === 'service_worker' && t.url.startsWith('chrome-extension://' + id + '/'), 10000)
+// Ghostery's engine, as Min builds it
+function ghosteryChecks () {
+  const { ElectronBlocker, fromElectronDetails } = require('@ghostery/adblocker-electron')
+  // enough generic rules for the optimizer to merge them (two aren't: the side engine's test in Node used more)
+  const params = ['gclid', 'fbclid', 'srsltid', 'gad_source', 'wbraid', 'gbraid', 'dclid', 'ysclid', '_gl', 'yclid']
+  const rules = params.map(name => '$removeparam=' + name).join('\n')
+  const url = 'https://shop.example.org/item?' + params.map(name => name + '=1').join('&') + '&keep=1'
+  const rewritten = engine => {
+    const { rewrite } = engine.match(fromElectronDetails({ id: 0, url, resourceType: 'mainFrame', referrer: 'https://www.example.com/' }))
+    return rewrite ? rewrite.url : url
+  }
+  const optimized = rewritten(ElectronBlocker.parse(rules))
+  const unoptimized = rewritten(ElectronBlocker.parse(rules, { enableOptimizations: false }))
+  check('still needed: Ghostery\'s optimizer keeps one parameter name of the generic $removeparam rules (Min builds them without it)', optimized !== 'https://shop.example.org/item?keep=1' && unoptimized === 'https://shop.example.org/item?keep=1', { optimized, unoptimized })
+  // a third-party rule asked about a page request from another site
+  const engine = ElectronBlocker.parse('||popup-ads.example^$third-party,document\n||popup-ads.example^$third-party,other')
+  const asPage = engine.match(fromElectronDetails({ id: 0, url: 'https://popup-ads.example/x', resourceType: 'mainFrame', referrer: 'https://news.example.org/' })).match
+  const asOther = engine.match(fromElectronDetails({ id: 0, url: 'https://popup-ads.example/x', resourceType: 'other', referrer: 'https://news.example.org/' })).match
+  check('still needed: Ghostery never counts a page request as third-party (Min asks its pop-up rules as $other)', asPage === false && asOther === true, { asPage, asOther })
+}
+
 ;(async () => {
   let main
+  try {
+    ghosteryChecks()
+  } catch (e) {
+    check('Ghostery checks: the check itself failed', false, String(e.stack || e).slice(0, 500))
+  }
   try {
     main = await launch(PAGE)
     let u = await ui()

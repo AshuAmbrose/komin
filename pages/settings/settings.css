@@ -5,7 +5,7 @@ html {
 
 .settings-info-subheading {
   opacity: 0.666;
-  margin-top: -0.1em;
+  margin-top: 0.33em;
   margin-bottom: 1em;
 }
 
@@ -140,6 +140,11 @@ html {
 #content-blocking-information textarea {
   vertical-align: text-bottom;
   resize: vertical;
+}
+
+#content-blocking-exceptions {
+  width: 100%;
+  max-width: 500px
 }
 
 #customize-filters-link {
@@ -380,4 +385,22 @@ html {
   height: 24px;
   flex-shrink: 0;
   object-fit: contain;
+}
+
+#userscripts-show-directory {
+  margin-top: -0.5em;
+  margin-bottom: 0.5em;
+}
+
+#input-user-agent {
+  vertical-align: middle;
+  margin-left: 1em;
+  width: 375px;
+  max-width: 80vw;
+  visibility: hidden;
+}
+
+#custom-search-engine {
+  margin-left: 0.5em;
+  min-width: 325px
 }
