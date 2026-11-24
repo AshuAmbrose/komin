@@ -174,7 +174,7 @@ dl.glossary dd { margin: 0; color: var(--fg); }
   <p class="eyebrow">A beginner's guide to the browser in D:\Ashmin-Gold</p>
   <h1>Inside Min</h1>
   <p class="lede">Your browser is a fork of Min, built on Electron. This guide explains how it works, from the processes Windows lists in Task Manager down to the line of code that decides whether an ad loads. Read it in order the first time, since each chapter builds on the one before.</p>
-  <p class="facts"><span><code>master</code> at <code>e53ee61a</code>, plus the branch <code>chore/unlocked-remeasure</code></span><span>Electron 45.2.2 (Chromium 156)</span><span>Ghostery adblocker 2.20.1</span><span>Updated 13 November 2026</span></p>
+  <p class="facts"><span><code>master</code> at <code>e53ee61a</code>, plus the branch <code>chore/unlocked-remeasure</code></span><span>Electron 45.4.1 (Chromium 156)</span><span>Ghostery adblocker 2.20.1</span><span>Updated 13 November 2026</span></p>
   <div class="legend" aria-label="Legend: where code runs">
     <strong>Where the code runs:</strong>
     <span class="chip main">Main process</span>
@@ -208,8 +208,9 @@ dl.glossary dd { margin: 0; color: var(--fg); }
       <li><a href="#debug"><span class="n">17</span><span>Debugging toolkit</span><span class="done">✓</span></a></li>
       <li><a href="#extensions"><span class="n">18</span><span>Chrome extensions</span><span class="done">✓</span></a></li>
       <li><a href="#security"><span class="n">19</span><span>Security: keeping websites in their place</span><span class="done">✓</span></a></li>
-      <li><a href="#exercises"><span class="n">20</span><span>Exercises</span><span class="done">✓</span></a></li>
-      <li><a href="#glossary"><span class="n">21</span><span>Glossary</span><span class="done">✓</span></a></li>
+      <li><a href="#outside-tests"><span class="n">20</span><span>Borrowing other browsers' tests</span><span class="done">✓</span></a></li>
+      <li><a href="#exercises"><span class="n">21</span><span>Exercises</span><span class="done">✓</span></a></li>
+      <li><a href="#glossary"><span class="n">22</span><span>Glossary</span><span class="done">✓</span></a></li>
     </ol>
     <p class="toc-note">Tick "I've read this" at the end of a chapter to mark it here. The ticks are saved in this browser only.</p>
   </details>
@@ -760,6 +761,10 @@ sender.executeJavaScript(combined)</pre>
   </div>
   <p>Min's YouTube result had a clear cause, which the next section explains, and it's fixed: 0 of 3 since. The 9 empty ad spaces have their own section after that.</p>
   <p>The decision: Min's blocker stays the default, and uBO Lite is a good alternative for anyone who prefers it (Chapter 18).</p>
+  <div class="note">
+    <span class="callout-label">What ad blocker test sites measure</span>
+    <p>On 13 November you got 68% on adblock.turtlecute.org, and the test script <code>measure-adblock-turtlecute.js</code> got the same: 89 of its 130 checks blocked. uBO Lite got 63%, and no blocking 5%. The score is just the share of checks blocked. Most of what Min lets through are addresses web pages never call: phone makers' telemetry (Xiaomi, Oppo, Realme, Apple), ad kits built into mobile apps (Unity, TikTok's ad APIs), some Yahoo hosts. Those are on blocklists for whole-network blockers like Pi-hole, not in the lists browser blockers use. The rest are decoys on the test site itself, which, as its own help says, only count as blocked with rules written for that site. So a score like this mostly measures which host list you use, not how well pages are cleaned; the five real news sites above are the better test.</p>
+  </div>
 
   <h3>Why YouTube showed ads, and the fix</h3>
   <p>Some scriptlets only work if they're in place <em>before</em> the page's own scripts run. YouTube's page starts with a script that writes the video's details, ads included, into a variable called <code>ytInitialPlayerResponse</code>. One rule sets a trap on that name first, so that when YouTube writes it, the ad part is thrown away. Set the trap after YouTube has written it, and it can't change anything any more.</p>
@@ -795,6 +800,7 @@ sender.executeJavaScript(combined)</pre>
     <li>Sometimes a video sits on a spinner for about as long as the ad would have run. This is YouTube's own delay for viewers whose ad didn't load.</li>
     <li><strong>Stand-ins that never arrive.</strong> For some well-known ad and analytics scripts, the lists don't say "block this" but "swap it for a harmless stand-in": an empty file, or a tiny fake of Google's ad script that reports "ads loaded fine". A site that waits for that script then carries on normally. Ghostery hands Min each stand-in as a <code>data:</code> address, where the file's whole content is written into the address itself. Chromium refuses to send a web request on to a <code>data:</code> address (<code>ERR_UNSAFE_REDIRECT</code>), so the request fails exactly like a blocked one. uBlock Origin Lite serves its stand-ins from its own extension files, which Chromium allows: in the 7 November comparison it swapped 78 requests on the five sites this way, while Min's blocker swapped none. The ads stay blocked either way. The risk is a site that waits for a script that never comes, so a video player that never starts, a button that does nothing, or an "ad blocker detected" message. None has been seen so far. The fix would serve the stand-ins from a Min address that Chromium accepts; it's only worth building if a site breaks.</li>
     <li>When an ad-blocking extension takes over normal tabs (Chapter 18), everything in this chapter applies to private tabs only.</li>
+    <li>Tests borrowed from AdGuard (Chapter 20) found rules Min read but didn't use: tracking-parameter rules, hiding in frames inside a page, and the "procedural" and pop-up rules of its own lists. All four work since 17 November; Chapter 20 has how, and what they cost.</li>
   </ul>
   <label class="read-toggle"><input type="checkbox" data-read="adblock"> I've read this</label>
 </section>
@@ -831,6 +837,7 @@ sequenceDiagram
   <ul>
     <li><strong>Saved answers</strong> live in <code>settings.json</code> under <code>sitePermissions</code>, keyed by site name, for example <code>{"example.com": {"media:video": "allow", "notifications": "block"}}</code>. Private tabs never save.</li>
     <li><strong>"Allow for this session" answers</strong> are kept in memory, tagged with the session they were given in, so private tabs and normal tabs don't share them.</li>
+    <li><strong>Notifications need a secure page</strong> (since 17 November): a page on plain <code>http://</code> gets "no" without a question, as the web standard says and Chrome does, even if you allowed the same site's <code>https://</code> pages. Before, Min showed its bar there (Chapter 20).</li>
     <li><strong>Live indicators:</strong> <code>mediaTracker.js</code> reports when capture starts and stops (<code>media-access-status</code>). The tab icons and the memory trimmer both use that information.</li>
     <li><strong>Site settings</strong> in <code>pages/settings</code> lets you review and change saved answers.</li>
   </ul>
@@ -1226,7 +1233,7 @@ sequenceDiagram
     <h2>Keeping Electron current</h2>
     <p class="chapter-intro">Electron releases a new major version about every eight weeks, each with a newer Chromium. Upgrading brings security fixes and features, and sometimes breaks things.</p>
   </div>
-  <p>We upgraded because Chrome extension support (Chapter 18) needs it: on Electron 43.4.1, modern extensions' background workers never received events such as alarms. The fixes are in 43.8.4 and 45.1. Min now runs 45.2.2.</p>
+  <p>We upgraded because Chrome extension support (Chapter 18) needs it: on Electron 43.4.1, modern extensions' background workers never received events such as alarms. The fixes are in 43.8.4 and 45.1. Min ran 45.2.2 from November, and 45.4.1 since 24 November (a patch release with Chromium's latest security fixes; the table is the big step).</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
@@ -1265,6 +1272,7 @@ sequenceDiagram
     <span class="callout-label">How upstream did it</span>
     <p>Min's original author (PalmerAL) made the same upgrade a few days after us, in two commits: Electron 44, then 45.2.1. Comparing them, most changes match ours. Two of his were better, and Min now has them too: a newer Electron 45 (Min went to 45.2.2, the latest, with a newer Chromium) and a password file that is read and written without pausing the rest of the browser. Ours is stricter in two places, which stay: only Min's own windows can use the clipboard handlers, and back/forward use Electron's new history functions.</p>
     <p>He made two more changes after that, and Min has both since 9 November. One removes a "this site could harm you" warning page that nothing opened any more. The other stops an error when Min tries to take a tab's preview picture while its window is covered: a covered window draws nothing, so there's no picture to take, and the old code didn't expect that. Min's own test logs showed that error many times.</p>
+    <p>On 24 November his next seven commits were reviewed. Min took Electron 45.4.1 (his was 45.3.2), his two password-manager fixes (Chapter 19), and his security rules for Min's own pages, fixed where they broke Min's pages. It skipped his guard against websites opening Min's pages (Min's own is stricter), a version number and a Linux packaging step. Checking one of those turned up a bug of our own (Chapter 20).</p>
   </div>
 
   <h3>Testing an upgrade</h3>
@@ -1614,6 +1622,14 @@ npm run test:e2e</pre>
     </ol>
   </div>
 
+  <h3>Three more, from upstream (24 November)</h3>
+  <p>Reviewing the original Min's new commits brought three more protections. Each was first tried as an attack in <code>security-checks</code>, and each attack worked until the fix:</p>
+  <ul>
+    <li><strong>A page could read your saved password.</strong> When you click a password box, Min shows a small key button that fills in your saved login. A page's own script could focus its password box, then fake a click on that key: Min filled the box, and the script read it. The fill code now ignores events the page made up (browsers mark real ones as "trusted"). Check A7.</li>
+    <li><strong>Passwords only on secure pages.</strong> Min filled and offered to save passwords on plain <code>http://</code> pages, where anyone on the network can read and change the page. Now only <code>https://</code> pages, local files and your own network's addresses (a router's page, say). Check A8, with a real click on a local page as the control.</li>
+    <li><strong>Security rules for Min's own pages.</strong> Every <code>min://</code> page now tells Chromium to run only Min's own script files and stylesheets: no inline code, no plugins, no forms sent elsewhere. If someone ever slipped HTML into one of these pages, it couldn't run. Upstream's rules broke three things in Min, which a new test suite, <code>internal-pages</code>, found by opening every page and collecting anything blocked: page translation (it runs WebAssembly, which the rule forbade), pictures written into an article in reader view, and the extension icons in Settings. Min's version allows each of those, and only where it's needed.</li>
+  </ul>
+
   <h3>What's left</h3>
   <ul>
     <li><strong>A decision, not a bug:</strong> the ad blocker downloads the code of its scriptlets (Chapter 10) along with its filter lists, and that code runs on every website. Whoever could change that file could run code on every site you visit. uBlock Origin ships its scriptlets inside the extension instead. Keeping a checked copy in Min would mean updating it by hand; nothing has changed yet.</li>
@@ -1623,9 +1639,110 @@ npm run test:e2e</pre>
 </section>
 
 <!-- 20 -->
-<section class="chapter prose" id="exercises" data-chapter>
+<section class="chapter prose" id="outside-tests" data-chapter>
   <div class="chapter-head">
     <span class="chapter-num">Chapter 20</span>
+    <h2>Borrowing other browsers' tests</h2>
+    <p class="chapter-intro">Browser makers publish their test suites. On 13 and 14 November four outside test sources were run against Min: the web standards suite every browser shares, AdGuard's ad-blocker test pages, an ad-blocker test website, and a fresh run of the 53-extension check. On the night of 16 to 17 November, at your request, everything they found was fixed, each fix proven first by a test that failed. This chapter is what they found, what changed, and what's left.</p>
+  </div>
+
+  <h3>Why borrow tests at all</h3>
+  <p>Min's own suites (Chapter 17) check what was built here. Outside suites check things nobody here thought of, written by people who know the standards inside out. Which ones are worth running follows from how Min is built (Chapter 01). The engine is Chromium, unchanged, and Google runs Chromium's own tests all day long, so rerunning them here would only retest Google's work. What can break is what Min adds on top: how it opens windows and tabs, its network hooks, the scripts it puts into every page, its permission bar, its ad blocker, its extension support. The tests were picked for those.</p>
+
+  <h3>web-platform-tests: one page, two browsers</h3>
+  <p><a href="https://wpt.fyi">web-platform-tests</a> is the suite all browser makers write together: tens of thousands of small pages, each checking one rule of the web standards and reporting pass or fail. Min runs 1,854 of them, from the folders its code could affect: windows and navigation, scripts, <code>fetch</code>, service workers, notifications, permissions, fullscreen. The script is <code>test/e2e/wpt.js</code>.</p>
+  <p>A failing test doesn't by itself mean Min is wrong: Chromium fails some tests too. So every page also runs in a <strong>baseline</strong>, a bare Electron app with the same Chromium and none of Min's code (<code>test/e2e/wpt-baseline</code>, a dozen lines). A test that passes there and fails in Min points straight at Min's own code.</p>
+  <p>How it runs, in short: the suite comes with its own little web server, written in Python. Its tests expect addresses like <code>web-platform.test</code>, so instead of editing Windows' list of names, Chromium is told to send those names to your own computer (<code>--host-resolver-rules</code>). Every test page reports through one shared file of the suite, and the script swaps in a copy that leaves the results where it can read them over the DevTools connection (Chapter 17).</p>
+  <p>The result: <strong>107 of the 1,854 pages pass in the bare app and fail in Min.</strong></p>
+
+  <h3>What <code>window.open</code> gives back</h3>
+  <p>102 of those 107 are about one thing. A page can open a new window and keep a handle on it:</p>
+  <pre class="code">const w = window.open('https://pay.example/checkout')
+<span class="c">// later the page can use w.postMessage(...), w.closed, w.close(),</span>
+<span class="c">// and the new page can talk back through window.opener</span></pre>
+  <p>Chrome shows the new page as a tab or a window, but always gives the page its handle. Min, like the original Min it's built from, treats <code>window.open(url)</code> without a size as a link click: Min opens the tab itself and tells Chromium "no window". So <code>w</code> is <code>null</code>, and the new tab has no <code>window.opener</code>. With a size (<code>window.open(url, 'pay', 'width=500')</code>), Min lets Chromium make the window and shows it as a tab, with the link intact. Many sign-in pop-ups pass a size, which is why they work.</p>
+  <p>To prove it was this rule and nothing else, the failing tests ran again in Min with the rule switched off for that one run (then <code>MIN_WPT_SWITCH=popupsKeepOpener</code>; since the fix the switch works the other way round, <code>popupsAsNewTabs</code> puts the old rule back): 99 of the 107 then passed.</p>
+  <p>Where it would have hurt you: a site that opens a sign-in or payment page with <code>window.open(url)</code> and no size, then waits for that page to report back. The site would throw an error or wait forever.</p>
+  <p><strong>Fixed on 17 November.</strong> Every window a page opens is now Chromium's own, shown as a tab, as in Chrome: the page keeps its handle, the new page knows who opened it, and Ctrl+click and middle-click still open tabs in the background. A new test suite, <code>popups</code>, clicks links for real (normal, Ctrl, middle, Shift), opens windows from scripts, and checks each case; with the old rule switched back on, six of its checks fail. A second one, <code>popups-real</code>, clicks the "Continue with Google / GitHub" buttons of ten real sites without signing in: Canva, Figma and Khan Academy open a Google sign-in window linked to the site, before and after the change, because they give it a size; five others go to the sign-in page in their own tab. On the way it fixed an older problem: a pop-up from a private tab lost its session if it was put to sleep (hibernated) and woken again. Of the 107 standards tests that failed only in Min, 7 still do: 3 about a pop-up closing itself while it has a "leave this page?" handler, the 3 autoplay ones below, and 1 that needs a test robot to grant a permission.</p>
+  <div class="warn">
+    <span class="callout-label">A bug that fix brought, found a week later</span>
+    <p>Electron closes the windows a page opened when that page closes, unless told otherwise. Before 17 November that rarely mattered; after it, every tab opened from a link counted. So closing a page left every tab you'd opened from it empty, and Settings' extension buttons stopped working until a restart. It was found on 24 November while testing a security check, before you'd committed anything, and fixed the same day with one setting (<code>outlivesOpener</code>). The <code>popups</code> suite now closes a page and checks the tabs it opened are still alive.</p>
+  </div>
+
+  <h3>The other five, and one quirk</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What the tests did</th><th>What Min did</th><th>Why, and what's next</th></tr></thead>
+      <tbody>
+        <tr><td>Three pages waited for a muted video to start by itself</td><td>Kept it still until someone clicked the page</td><td>Your autoplay setting (off by default) holds back muted videos too; Chrome lets those play. With autoplay on, all three pass. It saves power, so it stays as it is.</td></tr>
+        <tr><td>Two pages on <code>http://</code> asked to show notifications</td><td>Showed its permission bar</td><td>The standard says a page that isn't secure gets "no" without a question, and Chrome does that. Fixed on 17 November (test suite <code>permissions</code>): it also stops an "allow" you gave a site's secure pages from counting on its insecure ones, since Min remembers answers by site name.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The quirk: two tests copy the request's headers into JavaScript and trip over the quotation marks in the <code>Sec-CH-UA</code> header that Min adds to every request (Client Hints, in the glossary). That's the tests being fragile, not Min being wrong.</p>
+  <p>One lesson about testing itself: the first baseline run happened while the display had turned off for the night (Chapter 17), and 39 fullscreen checks failed in the bare app for that reason alone. The script now keeps the display on while it runs, and a rerun made them disappear.</p>
+
+  <h3>AdGuard's ad-blocker test pages</h3>
+  <p>AdGuard, another ad-blocker maker, publishes test pages at testcases.agrd.dev. Each group is a page plus a small filter list, and the page checks that the list did its job. The script <code>measure-adguard-testcases.js</code> builds each group's list into Min's ad-block engine the way Min builds its own, opens the page in Min and reads the results: 38 of 150 tests pass.</p>
+  <p>That sounds low, but most of those lists are written in AdGuard's own rule language, which Ghostery's engine (Chapter 10) doesn't read at all, whatever Min does. A second script, <code>measure-adguard-engine.js</code>, sorted every failure into rules the engine can't read (AdGuard's own business) and rules it reads but Min doesn't use (Min's). The second kind is a short list:</p>
+  <ul>
+    <li><strong>Tracking parameters.</strong> A rule like <code>$removeparam=gclid</code> strips a tracking part from addresses. The engine works out the cleaned address, and Min never used it; Min only removed a fixed list of its own.</li>
+    <li><strong>Frames.</strong> Min hid ad boxes and ran scriptlets only in the tab's main page, not in the frames inside it. uBlock Origin does both.</li>
+    <li><strong>Stand-ins</strong> that Chromium refuses (Chapter 10, "Known limits").</li>
+  </ul>
+
+  <h3>What Min's own lists lose</h3>
+  <p><code>measure-adblock-lists.js</code> reads Min's 16 real lists with the engine exactly as Min does and counts what falls out. Of about 168,000 rules:</p>
+  <ul>
+    <li><strong>567 "procedural" hiding rules</strong>, like "hide the box that contains the word Sponsored". The engine can do these, but Min doesn't switch that feature on. They're mostly fixes for particular sites and answers to anti-adblock scripts.</li>
+    <li><strong>About 3,370 pop-up rules</strong> (<code>$popup</code>), which the engine can't read at all, so blocking ad pop-ups relies on the handful of rules Min's older matcher has.</li>
+    <li>About 600 others in syntaxes the engine doesn't know.</li>
+  </ul>
+  <h3>What changed in the ad blocker overnight</h3>
+  <p>All four are in now, each with a test that failed first. On AdGuard's pages, 76 of 231 tests pass with the changes and 68 with them switched off; the pop-up page went from 1 of 7 to 7 of 7. (The night also showed that the earlier count, 38 of 150, came from a script that sometimes read a page before it had finished; that's fixed, and these numbers are from the corrected one.)</p>
+  <ul>
+    <li><strong>Pop-up rules.</strong> As the lists download, Min picks out their 3,094 pop-up rules and keeps them in a second, small engine, rewritten so the engine can read them. When a page opens a window, Min asks it about the address, using the page that opened it as the source (rules like "pop-ups to this site from other sites"). Before, Min compared the pop-up's address with itself, so even its older matcher's rules of that kind never applied. It costs 28 milliseconds at start and about a tenth of a megabyte.</li>
+    <li><strong>Tracking parameters.</strong> Applied now, to page addresses and to every request. This one hid a bug in Ghostery's engine: to save memory it merges similar rules, and it merged the 200-odd general "remove this parameter" rules into one that only knows one parameter name. So those rules live in a third small engine, built without that merging. AdGuard's own test page for these still fails, because of a second Ghostery bug that only its test list triggers (a rule marked "important" is treated as "block"); Min's real lists have no such rule, and Min's own test shows the parameters removed. Neither bug is reported to Ghostery yet.</li>
+    <li><strong>Frames.</strong> Each frame already asks Min for its userscripts as it starts; now it gets its own site's hiding rules and scriptlets in the same answer, and puts the hiding rules into itself (Min's usual way only reaches a tab's top frame). Measured on seven big real sites, twice in two batches: no extra processor time, and 5 to 44 MB more memory with all seven open (0.3 to 2%). That was judged small enough to keep it on, since it also reaches ads inside frames and YouTube players embedded in other sites; switching it off is a one-line change if you disagree.</li>
+    <li><strong>Procedural rules.</strong> The engine now keeps them, and sends a page its own as small instructions. The page runs them with Ghostery's evaluator (14 KB, only started on a page that has such rules), again whenever the page changes, at most twice a second, and not while the page is hidden. Of the seven measured sites, Times of India has 9 such rules, NDTV 2 and YouTube 1; with them on, neither processor time nor memory moved beyond the normal run-to-run spread.</li>
+  </ul>
+  <p>Two lessons from the night. First, a test tool can lie: the test harness had been keeping the AdGuard runner's tiny test lists as its "real" lists since 14 November, so later test runs had almost no ad blocking. It was found because a result looked odd, fixed, and the real lists downloaded again. Second, Min's list update gives up when any one of its 16 list sites doesn't answer (one didn't, for a few minutes that night). Min keeps its saved lists and tries again an hour later, so nothing breaks, but a list site that stayed down would stop updates. Left as it is for now.</p>
+
+  <h3>The extensions, again</h3>
+  <p>The 53-extension check (Chapter 18) ran again after the permission checks of 12 November. One real problem: <strong>Grammarly couldn't read its sign-in cookie</strong> (fixed on 17 November, below). Before reading it, Grammarly asks "do I have permission for this site?", and the extension library answers by comparing site patterns as plain text: Grammarly's <code>https://*/*</code> ("every secure site") isn't the same text as Grammarly's own address, so the answer is no. Chrome says yes. A fix in Min is small; not made yet.</p>
+  <p>Fixed on 17 November: Min now answers that question itself, comparing patterns the way Chrome does, and Grammarly no longer complains. Two hiccups didn't happen again: Wappalyzer's install took over a minute once (19 to 22 seconds alone), and Ghostery's background worker hadn't started once. Ghostery ran four more times on its own, twice with Min's new permission checks switched off and twice with them on, and behaved the same every time, so the checks aren't the cause. The check now records how long every install takes, to catch it next time.</p>
+
+  <h3>The extension library's own tests</h3>
+  <p>The extension library has tests of its own: about 60, for toolbar buttons and their popups, tabs, right-click menus, notifications and windows. Running them meant downloading the library's development tools from the internet, so they waited for your go-ahead, which you gave on 24 November. A script in <code>test/e2e</code>, <code>library-tests.js</code>, now does it: it keeps a copy of the library's repository in your temp folder and runs its tests with Min's own Electron. All of them pass, so the library itself works on the Electron Min ships. They test the library on its own, not Min's changes to it; Min's own suites do that.</p>
+  <p>Two of them check "native messaging": an extension talking to a program on your computer, as some password managers' desktop apps do. To set that up they register a small test program for Google Chrome in your Windows registry, where your own Chrome would see it, so they were left out until you agreed. With your yes, they ran too: all 66 pass. The script notes beforehand what was already there, removes only what the tests added once they finish (even if a run is stopped halfway), and checks it's gone; your Chrome's own entries stay as they were.</p>
+
+  <div class="try">
+    <span class="callout-label">Try it</span>
+    <ol>
+      <li>Once: <code>node test/e2e/wpt.js setup</code>. It needs Git and Python 3, and copies part of the suite into your temp folder.</li>
+      <li><code>node test/e2e/wpt.js run min html/browsers/windows</code>, then the same with <code>electron</code> instead of <code>min</code>, then <code>node test/e2e/wpt.js compare</code>. One folder takes a few minutes; all of them take about 80 minutes per app.</li>
+      <li>Open <code>test/e2e/results/wpt-compare.json</code>: <code>testsOnlyBrokenInMin</code> is the list, and <code>opensWindows</code> says which of them open windows.</li>
+      <li>For ad blocking: <code>node test/e2e/measure-adguard-testcases.js "Element hiding"</code> runs one group, then read <code>test/e2e/results/measure-adguard-testcases-groups.json</code>. The pop-up group is clicked by the script now: each trick's button, then the page.</li>
+      <li>See a fix switched off: <code>MIN_TEST_OLD=popupsAsNewTabs node test/e2e/run.js popups</code> runs the pop-up suite with the old window rule, and its window checks fail.</li>
+    </ol>
+  </div>
+
+  <h3>The full test run</h3>
+  <p>After all of it, the whole regression run (<code>npm run test:e2e</code>, now 28 suites with the four new ones) passed in one go: 451 checks.</p>
+
+  <h3>What's left for you</h3>
+  <ul>
+    <li><strong>Try the sign-in round trip yourself</strong> on a site you use that opens a sign-in window (Canva, Figma or Khan Academy, for example): the tests check that the window opens and stays linked, but only a person can finish signing in.</li>
+    <li><strong>Use the build for a day</strong>: the window change touches every link that opens a tab.</li>
+    <li>Nothing is committed yet: say the word when you've tried it.</li>
+  </ul>
+  <label class="read-toggle"><input type="checkbox" data-read="outside-tests"> I've read this</label>
+</section>
+
+<!-- 21 -->
+<section class="chapter prose" id="exercises" data-chapter>
+  <div class="chapter-head">
+    <span class="chapter-num">Chapter 21</span>
     <h2>Exercises</h2>
     <p class="chapter-intro">Small, safe changes that touch each part of the browser. Do them in order, on a new branch, with <code>npm start</code> running.</p>
   </div>
@@ -1718,14 +1835,15 @@ module.exports = { initialize }</pre>
   <label class="read-toggle"><input type="checkbox" data-read="exercises"> I've read this</label>
 </section>
 
-<!-- 21 -->
+<!-- 22 -->
 <section class="chapter prose" id="glossary" data-chapter>
   <div class="chapter-head">
-    <span class="chapter-num">Chapter 21</span>
+    <span class="chapter-num">Chapter 22</span>
     <h2>Glossary</h2>
   </div>
   <dl class="glossary">
     <dt>Background worker</dt><dd>An extension's invisible page (a service worker) that reacts to events: tabs changing, messages, alarms. It runs in a process of its own and may stop when idle.</dd>
+    <dt>Baseline</dt><dd>In a comparison, the setup without the thing being tested. For web-platform-tests, a bare Electron app with Min's Chromium and none of Min's code, so a test failing only in Min points at Min's code.</dd>
     <dt>BaseWindow</dt><dd>An Electron window that holds views. Min's window holds the UI view plus the selected tab's view.</dd>
     <dt>Breaking change</dt><dd>A change in a new version of a library that makes old code stop working, so the code has to be updated when you upgrade.</dd>
     <dt>Browser engine</dt><dd>The part that turns HTML, CSS and JavaScript into pixels. Here, Chromium.</dd>
@@ -1742,6 +1860,7 @@ module.exports = { initialize }</pre>
     <dt>DevTools Protocol (CDP)</dt><dd>The interface DevTools uses to control Chromium. Scripts can use it too, through a remote debugging port.</dd>
     <dt>Electron</dt><dd>Chromium plus Node.js, for writing desktop apps in JavaScript.</dd>
     <dt>Filter list</dt><dd>A text file of ad-blocking rules, such as EasyList or uBlock Origin's filters.</dd>
+    <dt>Frame (iframe)</dt><dd>A web page shown inside another page, often from another site. Ads usually come in frames.</dd>
     <dt>Fuse</dt><dd>A switch baked into the Electron executable to turn off a feature for good.</dd>
     <dt>Greasemonkey functions</dt><dd>The extra powers a userscript can ask for with <code>@grant</code>, such as <code>GM_setValue</code> and <code>GM_xmlhttpRequest</code>. Named after Greasemonkey, the first userscript manager.</dd>
     <dt>Hibernation</dt><dd>Closing a background tab's view to free memory, while keeping the tab so it reloads when clicked.</dd>
@@ -1750,9 +1869,12 @@ module.exports = { initialize }</pre>
     <dt>Main process</dt><dd>The single, privileged process that starts first and controls windows, tabs, the network and files.</dd>
     <dt>Manifest</dt><dd>An extension's <code>manifest.json</code>: its name, version, permissions and files.</dd>
     <dt>Memory priority</dt><dd>Windows' ranking of whose memory to take first when RAM runs short, from 0 to 7 (normal is 5). Min gives background tabs 2.</dd>
+    <dt>Opener</dt><dd>The page that opened a window or tab. Through <code>window.opener</code> the new page can send it messages, which is how sign-in pop-ups hand you back to the site.</dd>
     <dt>Origin</dt><dd>The scheme, host and port of an address (<code>https://example.com</code>, <code>min://app</code>). Browsers let pages of one origin read each other, and keep different origins apart.</dd>
     <dt>Occlusion</dt><dd>A window being completely covered by other windows. Chromium can treat a covered window as hidden.</dd>
+    <dt>Pop-up</dt><dd>A new window or tab a page opens by itself (<code>window.open</code>). Min shows them as tabs.</dd>
     <dt>Preload script</dt><dd>Min code that runs inside every page before the page's own scripts, and can message the main process.</dd>
+    <dt>Procedural rule</dt><dd>A hiding rule CSS can't express, such as "hide the box whose text says Sponsored" (<code>:has-text()</code>). The page works it out with a small evaluator.</dd>
     <dt>Private bytes</dt><dd>Memory Windows has reserved for one process, whether it's in RAM or not. Trimming doesn't lower it; closing the process does.</dd>
     <dt>Profile (userData)</dt><dd>The folder holding settings, history, passwords and sessions: <code>%APPDATA%\Min</code>.</dd>
     <dt>Renderer process</dt><dd>A process that shows web content: Min's UI, or a website.</dd>
@@ -1766,6 +1888,7 @@ module.exports = { initialize }</pre>
     <dt>Task</dt><dd>Min's name for a group of tabs.</dd>
     <dt>User agent</dt><dd>The text a browser sends to identify itself, such as "Chrome/150 on Windows".</dd>
     <dt>Userscript</dt><dd>A JavaScript file you install to change how certain websites look or work, described by its <code>==UserScript==</code> header.</dd>
+    <dt>web-platform-tests</dt><dd>The test suite all browser makers write together (wpt.fyi): small pages that each check one rule of the web standards.</dd>
     <dt>webContents</dt><dd>Electron's object for one loaded page: navigate it, reload it, run code in it, listen to its events.</dd>
     <dt>WebContentsView</dt><dd>A rectangle in a window that shows one webContents. Each Min tab has one.</dd>
     <dt>webRequest</dt><dd>Electron's hooks into every network request of a session.</dd>

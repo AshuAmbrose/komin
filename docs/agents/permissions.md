@@ -8,6 +8,7 @@ Section 10.3 of the agent docs. [AGENTS.md](../../AGENTS.md) is the core (rules,
   - Supported permissions: `media`, `notifications`, `pointerLock`.
   - `fullscreen`, `clipboard-sanitized-write` and `display-capture` always get `callback(true)`. Display capture still goes through the picker.
   - Anything else is denied.
+- **Notifications only on secure pages** (since 2026-11-17). The standard says a page that isn't secure gets `denied` without a prompt, and Chrome does that in its own permission code, which Electron doesn't include (a bare Electron app answers `granted`). Min showed its bar to `http:` pages, and because it keeps answers by host name, an "allow" saved on a site's `https:` pages counted on its `http:` pages too. Found 2026-11-14 by web-platform-tests (`notifications/permissions-non-secure.html`); suite `permissions` failed 2 of 3 before the fix. Now both handlers refuse `notifications` when the page or its tab's page isn't a secure context (`notificationsFromInsecurePage`, `isSecureContextURL`: `https:`, `file:`, extensions, Min's own pages, localhost and 127.x count). Camera and microphone never reached Min there: Chromium hides `navigator.mediaDevices` on insecure pages.
 - `setPermissionCheckHandler(pagePermissionCheckHandler)`: a synchronous check with no prompt. Cross-origin iframes (`requestingOrigin !== embeddingOrigin`) are denied.
 - `setDisplayMediaRequestHandler(displayMediaRequestHandler)`: `desktopCapturer.getSources` → the picker in the UI → `{video: source, audio: 'loopback'}` on Windows when audio was requested.
 
